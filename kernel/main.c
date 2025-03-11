@@ -41,5 +41,5 @@ main()
     plicinithart();   // ask PLIC for device interrupts
   }
 
-  scheduler();        
+  scheduler(); //este es el planificador y nunca termina, definicion en proc.c    
 }
