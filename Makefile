@@ -142,6 +142,7 @@ UPROGS=\
 	$U/_sleep\
 	$U/_freemem\
 	$U/_pagesize\
+	$U/_ps\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

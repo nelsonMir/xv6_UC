@@ -104,6 +104,7 @@ extern uint64 sys_close(void);
 //new syscalls prototypes
 extern uint64 sys_freemem(void);
 extern uint64 sys_pagesize(void);
+extern uint64 sys_ps(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -132,6 +133,7 @@ static uint64 (*syscalls[])(void) = {
 //new syscalls
 [SYS_freemem] sys_freemem,
 [SYS_pagesize] sys_pagesize,
+[SYS_ps]      sys_ps,
 };
 
 void

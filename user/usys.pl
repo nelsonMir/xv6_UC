@@ -39,3 +39,4 @@ entry("uptime");
 #new syscalls
 entry("freemem");
 entry("pagesize");
+entry("ps");

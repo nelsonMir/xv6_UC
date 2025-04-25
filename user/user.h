@@ -25,6 +25,7 @@ int uptime(void);
 //new syscalls stub
 int freemem(void);
 int pagesize(void);
+int ps(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

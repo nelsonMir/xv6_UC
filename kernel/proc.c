@@ -26,6 +26,16 @@ extern char trampoline[]; // trampoline.S
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
+//NUEVO el array de estados para el comando ps, declarado en proc.h
+char *states[] = {
+  "UNUSED",   // Estado 0
+  "USED",     // Estado 1
+  "SLEEPING", // Estado 2
+  "RUNNABLE", // Estado 3
+  "RUNNING",  // Estado 4
+  "ZOMBIE"    // Estado 5
+};
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -124,6 +134,8 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  //anhado campo de prioridad
+  p->priority = 0; //prioridad por defecto 0
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -280,13 +292,16 @@ int
 fork(void)
 {
   int i, pid;
-  struct proc *np;
-  struct proc *p = myproc();
+  struct proc *np; //child process
+  struct proc *p = myproc(); //father
 
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
   }
+
+  //heredar la prioridad del padre
+  np->priority = p->priority;
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){

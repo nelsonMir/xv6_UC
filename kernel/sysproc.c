@@ -108,3 +108,32 @@ uint64 sys_pagesize(void){
 
   return get_page_size(); 
 }
+
+
+//como vamos a usar la variable global "proc" que es un array con todos los procesos
+//del sistema, asi que debemos usar el extern. proc esta definido en proc.c
+extern struct proc proc[NPROC];
+
+extern char *states[];
+
+//return all active processes
+uint64 sys_ps(void){
+
+  //pcb del proceso actual 
+  struct proc *p;
+
+  //imprimos: PID   STATE   NAME   (el \t se pone el tabulador)
+  printf("PID\tPRIORITY\tNAME\tSTATE\n");
+
+  //nos recorremos el array de procesos
+  for(p = proc; p < &proc[NPROC]; p++){
+
+    if (p->state == UNUSED) continue; //si el proceso no esta en uso, se ignora y se pasa al siguiente
+
+    //imprimos el PID, estado y nombre del proceso. SI no ponto el doble \t pues se desalinea por algun motivo
+    //asi que hazme caso, probe varias combinaciones y solo esta funciona bien
+    printf("%d\t%d\t\t%s\t%s\n", p->pid, p->priority, p->name, states[p->state]);
+  }
+
+  return 0;
+}

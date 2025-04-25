@@ -104,4 +104,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  //NUEVOS CAMPOS
+  int priority; // -20 (highest priority) to 19 (lowest priority)
+
+  //un array de estados para imprimir el nombre del estado en el comando ps. NO inicializamos en un archivo de cabecera
+  char *states[];
+
+
 };
