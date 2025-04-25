@@ -80,3 +80,36 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+//retorna el numero de paginas libres y la usaremos en la syscall sys_freemem
+uint64 free_mem(void){
+
+  struct run *r; //cada nodo de la lista de paginas libres en "kmem" es un puntero a una estructura 
+  //"run" que es la pagina en si 
+
+  //contador del numero de pags libres, debe ser uint64 porque con reg de 64 bits trabaja riscv
+  uint64 count = 0;
+
+  //accedemos a la var global "kmem" que apunta al inicio de paginas libres y usamos el lock para 
+  //evitar que otro proceso o CPU quiera acceder a esta para modificarla
+  acquire(&kmem.lock);
+
+  //obtenemos el primer puntero a la primera pagina libre
+  r = kmem.freelist;
+
+  //vamos a recorrer toda la lista de paginas libres
+  while(r){
+    count++;
+    r = r->next;
+  }
+
+  release(&kmem.lock);
+
+  return count * PGSIZE;
+}
+
+//retorna el tamano de una pagina 
+uint64 get_page_size(void){
+
+  return PGSIZE;
+}

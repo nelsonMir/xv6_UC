@@ -91,3 +91,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//new syscalls 
+//return the free mem that a process has
+extern uint64 free_mem(void); //implementation in kalloc.c
+
+uint64 sys_freemem(void){
+
+  return free_mem();
+}
+
+extern uint64 get_page_size(void); //implementation in kalloc.c
+
+//return the size of pages
+uint64 sys_pagesize(void){
+
+  return get_page_size(); 
+}

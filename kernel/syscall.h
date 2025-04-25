@@ -20,3 +20,6 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+//added syscalls 
+#define SYS_freemem 23
+#define SYS_pagesize 24

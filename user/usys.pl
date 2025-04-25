@@ -36,3 +36,6 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+#new syscalls
+entry("freemem");
+entry("pagesize");

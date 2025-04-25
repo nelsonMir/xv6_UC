@@ -1,6 +1,6 @@
 struct stat;
 
-// system calls
+// system calls stubs
 int fork(void);
 int exit(int) __attribute__((noreturn));
 int wait(int*);
@@ -22,6 +22,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+//new syscalls stub
+int freemem(void);
+int pagesize(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
