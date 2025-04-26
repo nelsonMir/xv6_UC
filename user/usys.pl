@@ -40,3 +40,4 @@ entry("uptime");
 entry("freemem");
 entry("pagesize");
 entry("ps");
+entry("getpriority");

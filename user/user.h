@@ -26,6 +26,7 @@ int uptime(void);
 int freemem(void);
 int pagesize(void);
 int ps(void);
+int getpriority(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -24,4 +24,5 @@
 #define SYS_freemem 22
 #define SYS_pagesize 23
 #define SYS_ps     24
+#define SYS_getpriority 25
 

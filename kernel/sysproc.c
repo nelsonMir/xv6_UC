@@ -137,3 +137,28 @@ uint64 sys_ps(void){
 
   return 0;
 }
+
+
+//return the priority of a process
+uint64 sys_getpriority(void){
+
+  int pid;
+  //puntero al pcb de un proceso
+  struct proc *p;
+
+  //leemos el argumento mandado utilizando la funcion de syscall.c para leer entero
+  //y leemos el primer argumento
+  argint(0, &pid);
+
+  
+  //recorremos el array de procesos y buscamos el proceso con PID y que este activo
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      return p->priority;
+    }
+  }
+
+  return -21; //devuelvo un valor de prioridad imposible, no puedo devolver -1 ya que es un valor valido
+  
+}

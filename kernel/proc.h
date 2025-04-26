@@ -108,8 +108,6 @@ struct proc {
   //NUEVOS CAMPOS
   int priority; // -20 (highest priority) to 19 (lowest priority)
 
-  //un array de estados para imprimir el nombre del estado en el comando ps. NO inicializamos en un archivo de cabecera
-  char *states[];
 
 
 };
