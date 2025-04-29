@@ -144,6 +144,7 @@ UPROGS=\
 	$U/_pagesize\
 	$U/_ps\
 	$U/_getpriority\
+	$U/_nice\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

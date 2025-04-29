@@ -41,3 +41,4 @@ entry("freemem");
 entry("pagesize");
 entry("ps");
 entry("getpriority");
+entry("nice");

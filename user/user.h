@@ -27,6 +27,7 @@ int freemem(void);
 int pagesize(void);
 int ps(void);
 int getpriority(int);
+int nice(int, int);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -42,6 +43,8 @@ void* memset(void*, int, uint);
 int atoi(const char*);
 int memcmp(const void *, const void *, uint);
 void *memcpy(void *, const void *, uint);
+//nuevas funciones de ulib.c
+int is_number(char *);
 
 // umalloc.c
 void* malloc(uint);

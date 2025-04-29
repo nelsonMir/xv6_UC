@@ -95,15 +95,27 @@ stat(const char *n, struct stat *st)
   return r;
 }
 
+//he mejorado atoi para aceptar valores negativos
 int
 atoi(const char *s)
 {
-  int n;
-
+  int n; //acumulador del numero final
+  int sign = 1; //el signo por defecto es positivo
   n = 0;
+
+  //vamos a detectar el signo del numero
+  if (*s == '-') { //si el signo es negativo lo guardamos
+    sign = -1;
+    s++;    // avanza al siguiente carácter
+  } else if (*s == '+') {
+    s++;   // solo avanza al siguiente caracter si el signo es positivo
+  }
+  //convierte cada caracter numerico a su valor entero
   while('0' <= *s && *s <= '9')
     n = n*10 + *s++ - '0';
-  return n;
+  
+  //multiplicamos el signo por el numero para aplicarle el signo
+  return sign * n;
 }
 
 void*
@@ -145,3 +157,29 @@ memcpy(void *dst, const void *src, uint n)
 {
   return memmove(dst, src, n);
 }
+
+
+//nuevas funciones
+
+/*Le pasamos un string y determina si cada caracter 
+es un digito del 0 al 9, retorna 0 si la cadena (al menos 1 caracter) no es un numero, 
+o 1 si la cadena es un numero*/
+// En user/ulib.c
+int is_number(char *s) {
+  if (*s == '-' || *s == '+') s++; // saltamos signo si lo hay y movemos el puntero al siguiente
+  if (*s == 0) return 0; //si solo tenemos un signo o la cadena es vacia, pues no es un numero
+  
+  //vamos a recorrer toda la cadena, para comprobar si cada caracter es un digito (hasta llegar al caracter nulo)
+  while (*s) {
+    //vamos a comparar si el caracter actual es un digito del 1 al 9, las letras ascii tienen un 
+    //num diferente asignado asi que es por eso que los podemos diferenciar
+    if (*s < '0' || *s > '9')
+      //si se entra aqui, entonces no es un numero
+      return 0;
+    s++;
+  }
+
+  //si se llega hasta aqui, la cadena es un numero
+  return 1;
+}
+

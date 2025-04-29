@@ -162,3 +162,34 @@ uint64 sys_getpriority(void){
   return -21; //devuelvo un valor de prioridad imposible, no puedo devolver -1 ya que es un valor valido
   
 }
+
+//changes the priority of a process
+uint64 sys_nice(void){
+
+  int pid;
+  //puntero al pcb de un proceso
+  struct proc *p;
+  //delta (cambio prioridad)
+  int delta;
+  
+
+  //leemos el argumento mandado utilizando la funcion de syscall.c para leer entero
+  //y leemos el primer argumento
+  argint(0, &pid);
+
+  //leo el delta, para el cambio de prioridad
+  argint(1,&delta);
+
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      p->priority = p->priority + delta;
+      if(p->priority < -20) p->priority = -20;
+      if(p->priority > 19) p->priority = 19;
+      return(0);
+    }
+  }
+
+  //si no se encuentra el proceso
+  return(-1);
+}

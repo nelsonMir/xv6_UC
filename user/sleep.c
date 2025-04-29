@@ -13,7 +13,7 @@ en el sistema de fichero de xv6 */
 del puntero a string, osea que no modificaremos el contenido del string, y esto nos permite evitar
 errores de redefinir casillas del array y tambien permite pasar constantes como argumento sin advertencias, 
 por ejemplo "is_number("123")"*/
-int is_number(const char *); //va a verificar que todos los caracteres del string sean digitos del 1 al 9
+int is_number_sleep(const char *); //va a verificar que todos los caracteres del string sean digitos del 1 al 9
 
 //arg es el # de argumentos, y argv es el array con los argumentos
 int main(int argc, char *argv[]){
@@ -45,7 +45,7 @@ int main(int argc, char *argv[]){
     exit(0);
 }
 
-int is_number(const char *s){
+int is_number_sleep(const char *s){
 
     //vamos a recorrer todos los caracteres del string y nos detenemos hasta encontrar el caracter nulo
     for(int i = 0; s[i] != 0; i++){

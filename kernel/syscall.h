@@ -25,4 +25,5 @@
 #define SYS_pagesize 23
 #define SYS_ps     24
 #define SYS_getpriority 25
+#define SYS_nice    26
 
