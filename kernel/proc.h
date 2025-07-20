@@ -107,7 +107,7 @@ struct proc {
 
   //NUEVOS CAMPOS
   int priority; // -20 (highest priority) to 19 (lowest priority)
-
+  int creation_time; // el tiempo de creacion del proceso
 
 
 };

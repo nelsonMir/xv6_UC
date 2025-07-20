@@ -36,6 +36,10 @@ char *states[] = {
   "ZOMBIE"    // Estado 5
 };
 
+//variable global para seleccionar el tipo de planificador a usar y por defecto RR
+int scheduler_policy = 1; // 0: RR, 1: FCFS, 2: Lottery
+
+
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
@@ -136,6 +140,8 @@ found:
   p->state = USED;
   //anhado campo de prioridad
   p->priority = 0; //prioridad por defecto 0
+  //anhado campo de tiempo de creacion para el FCFS
+  p->creation_time = ticks;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -158,6 +164,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //printf("Tiempo de creacion proceso %d: %d\n", p->pid, p->creation_time);
   return p;
 }
 
@@ -459,7 +466,7 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  struct proc *p;
+  //struct proc *p;
   struct cpu *c = mycpu();
 
   c->proc = 0;
@@ -470,23 +477,23 @@ scheduler(void)
     intr_on();
 
     int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+    
+    //lo nuevo, escoger el planificador
+    switch(scheduler_policy){
+      case 0:
+        //como p y c son punteros, se mandan sin mas
+        found = schedule_round_robin(c);
+        break;
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
-      }
-      release(&p->lock);
+      case 1:
+        found = schedule_fcfs(c);
+        break;
+
+      default:
+        found = schedule_round_robin(c);
+        break;
     }
+
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       intr_on();
