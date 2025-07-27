@@ -22,6 +22,12 @@ kvmmake(void)
   pagetable_t kpgtbl;
 
   kpgtbl = (pagetable_t) kalloc();
+
+  //debug 
+  if (kpgtbl == 0) {
+  printf("kvmmake: kalloc returned NULL!\n");
+  for (;;); // cuelga voluntariamente si falla
+  } 
   memset(kpgtbl, 0, PGSIZE);
 
   // uart registers
@@ -61,10 +67,16 @@ kvminit(void)
 void
 kvminithart()
 {
+   printf("kvminithart start\r\n");
+
   // wait for any previous writes to the page table memory to finish.
   sfence_vma();
 
+   printf("kvminithart after vma\r\n");
+
   w_satp(MAKE_SATP(kernel_pagetable));
+
+   printf("kvminithart after w_satp\r\n");
 
   // flush stale entries from the TLB.
   sfence_vma();

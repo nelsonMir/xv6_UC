@@ -7,6 +7,10 @@
 volatile static int started = 0;
 //extern int sbi_console;  
 extern void uartputc_sync(int c);
+//para poder inicializar con cualquier hart 
+volatile static int boothartid = -1;
+extern pagetable_t kernel_pagetable;
+
 
 // start() jumps here in supervisor mode on all CPUs.
 void main(unsigned long hartid, unsigned long dtb_pa)
@@ -18,11 +22,15 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     for (;;)
       ;
   }*/
-  uartputc_sync('X');  // <-- Si ves 'X' en minicom, UART funciona correctamente
+   // Mensaje de depuración básico, directo a UART
+  uartputc_sync('X' + hartid % 26);  // imprime letras distintas por hart  // <-- Si ves 'X' en minicom, UART funciona correctamente
   //sbi_console = 1;  //Activar salida por consola OpenSBI (UART por defecto no iniciado)
   printf("xv6-UC: starting on hart %ld...\n", hartid);
 
-  if(cpuid() != 0){
+  if(boothartid == -1){
+
+    boothartid = hartid;
+
     consoleinit();
     printfinit();
     printf("\n");
@@ -30,8 +38,12 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("\n");
 
     kinit();         // physical page allocator
+    printf("kernel_pagetable at %p\r\n", kernel_pagetable);
+    printf("kinit done\n");
     kvminit();       // create kernel page table
+    printf("kvminit done\n");
     kvminithart();   // turn on paging
+    printf("kvminithart done\n");
     procinit();      // process table
     trapinit();      // trap vectors
     trapinithart();  // install kernel trap vector
