@@ -5,17 +5,30 @@
 #include "defs.h"
 
 volatile static int started = 0;
+//extern int sbi_console;  
+extern void uartputc_sync(int c);
 
 // start() jumps here in supervisor mode on all CPUs.
-void
-main()
+void main(unsigned long hartid, unsigned long dtb_pa)
 {
-  if(cpuid() == 0){
+   /*if (hartid != 0) {
+    uartputc_sync('H');
+    uartputc_sync('!');
+    uartputc_sync('\n');
+    for (;;)
+      ;
+  }*/
+  uartputc_sync('X');  // <-- Si ves 'X' en minicom, UART funciona correctamente
+  //sbi_console = 1;  //Activar salida por consola OpenSBI (UART por defecto no iniciado)
+  printf("xv6-UC: starting on hart %ld...\n", hartid);
+
+  if(cpuid() != 0){
     consoleinit();
     printfinit();
     printf("\n");
     printf("xv6-UC version kernel is booting\n");
     printf("\n");
+
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging

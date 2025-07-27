@@ -8,7 +8,7 @@ T = target
 
 # Definir objetos del kernel
 OBJS = \
-  $(K)/entry.o \
+  $(K)/entry_vf2.o \
   $(K)/start.o \
   $(K)/console.o \
   $(K)/printf.o \
@@ -55,7 +55,6 @@ CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin
 CFLAGS += -fno-builtin-free -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I$(CURDIR)/kernel -I$(CURDIR)/user  # Rutas relativas
-
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Linker script específico para la VF2
@@ -63,17 +62,21 @@ ifeq ($(platform), vf2)
 linker = ./linker/vf2.ld
 endif
 
-# Compilación de entry.S
-kernel/entry.o: kernel/entry.S
-	$(AS) -o $@ $<
-
-# Enlazar el kernel
-$(T)/kernel.bin: $(OBJS) kernel/entry.o $(linker) $(U)/initcode
+# Enlazar el kernel (sin initcode.o)
+$(T)/kernel.bin: $(OBJS) $(linker)
 	@if [ ! -d "$(T)" ]; then mkdir $(T); fi
-	@$(LD) $(LDFLAGS) -T $(linker) -o $(T)/kernel $(OBJS) kernel/entry.o
+	@$(LD) -T $(linker) -o $(T)/kernel $(OBJS)
 	@$(OBJDUMP) -S $(T)/kernel > $(T)/kernel.asm
 	@$(OBJDUMP) -t $(T)/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(T)/kernel.sym
 	@$(OBJCOPY) -O binary $(T)/kernel $(T)/kernel.bin
+
+# Compilación de initcode por separado
+$(U)/initcode.o: $(U)/initcode.S
+	@echo "Compilando initcode con las rutas: $(CFLAGS)"
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(U)/initcode: $(U)/initcode.o
+	$(LD) -T $(linker) -o $@ $^
 
 # Compilación de programas de usuario
 UPROGS = \
@@ -101,8 +104,8 @@ UPROGS = \
 	$(U)/_nice \
 	$(U)/_pwd
 
-# Crear imagen de sistema de archivos
-fs.img: mkfs/mkfs README $(UPROGS)
+# Crear imagen de sistema de archivos (usa initcode aquí)
+fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode
 	mkfs/mkfs fs.img README $(UPROGS)
 
 # Limpieza
@@ -111,7 +114,7 @@ clean:
 	*/*.o */*.d */*.asm */*.sym \
 	$(U)/initcode $(U)/initcode.out $(K)/kernel fs.img \
 	mkfs/mkfs .gdbinit \
-        $(U)/usys.S \
+	$(U)/usys.S \
 	$(UPROGS)
 
 # Opciones de QEMU
@@ -123,11 +126,3 @@ QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 
 qemu: $(T)/kernel fs.img
 	$(QEMU) $(QEMUOPTS)
-
-# Compilación de initcode
-$(U)/initcode.o: $(U)/initcode.S
-	@echo "Compilando initcode con las rutas: $(CFLAGS)"
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(U)/initcode: $(U)/initcode.o
-	$(LD) -T $(linker) -o $@ $^

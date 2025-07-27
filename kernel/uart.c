@@ -13,7 +13,8 @@
 // the UART control registers are memory-mapped
 // at address UART0. this macro returns the
 // address of one of the registers.
-#define Reg(reg) ((volatile unsigned char *)(UART0 + (reg)))
+#define Reg(reg) ((volatile unsigned char *)(UART0 + 4 * (reg)))
+
 
 // the UART control registers.
 // some have different meanings for
