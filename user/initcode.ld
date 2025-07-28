@@ -2,7 +2,7 @@ SECTIONS
 {
   . = 0;
   .text : { *(.text) }
-  .rodata : { *(.rodata) }
   .data : { *(.data) }
+  .rodata : { *(.rodata) }
   .bss : { *(.bss COMMON) }
 }

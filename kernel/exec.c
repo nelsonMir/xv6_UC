@@ -37,40 +37,68 @@ exec(char *path, char **argv)
 
   if((ip = namei(path)) == 0){
     end_op();
+    printf("exec: namei fallo\r\n");
     return -1;
   }
   
   ilock(ip);
 
   // Check ELF header
-  if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf))
+  if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf)){
+    printf("exec: no se pudo leer encabezado ELF\r\n");
     goto bad;
+  }
+    
+ if(elf.magic != ELF_MAGIC) {
+    printf("exec: encabezado ELF invalido: 0x%x\r\n", elf.magic);
+    goto bad;
+  }
 
-  if(elf.magic != ELF_MAGIC)
-    goto bad;
+   printf("exec: ELF ok, entry=0x%ld, phoff=%ld, phnum=%d\r\n", elf.entry, elf.phoff, elf.phnum);
 
-  if((pagetable = proc_pagetable(p)) == 0)
+  if((pagetable = proc_pagetable(p)) == 0) {
+    printf("exec: fallo al crear pagetable\r\n");
     goto bad;
+  }
 
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
-    if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
+    if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph)){
+      printf("exec: fallo al leer ph %d\r\n", i);
       goto bad;
+    }
     if(ph.type != ELF_PROG_LOAD)
       continue;
-    if(ph.memsz < ph.filesz)
+    if(ph.memsz < ph.filesz){
+      printf("exec: memsz < filesz en ph %d\r\n", i);
       goto bad;
-    if(ph.vaddr + ph.memsz < ph.vaddr)
+    }
+    if(ph.vaddr + ph.memsz < ph.vaddr){
+      printf("exec: overflow en vaddr + memsz en ph %d\r\n", i);
       goto bad;
-    if(ph.vaddr % PGSIZE != 0)
+    }
+    if(ph.vaddr % PGSIZE != 0){
+      printf("exec: vaddr no alineado en ph %d\r\n", i);
       goto bad;
+    }
+
+    printf("exec: segmento %d → va=0x%ld, filesz=%ld, memsz=%ld, flags=0x%x, off=%ld\r\n",
+           i, ph.vaddr, ph.filesz, ph.memsz, ph.flags, ph.off);
+
     uint64 sz1;
-    if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, flags2perm(ph.flags))) == 0)
+    if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, flags2perm(ph.flags))) == 0) {
+      printf("exec: uvmalloc fallo en ph %d\r\n", i);
       goto bad;
+    }
     sz = sz1;
-    if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0)
+    if(loadseg(pagetable, ph.vaddr, ip, ph.off, ph.filesz) < 0){
+      printf("exec: loadseg fallo en ph %d\r\n", i);
       goto bad;
+    }
   }
+
+  printf("exec: segmentos cargados, preparando pila...\r\n");
+
   iunlockput(ip);
   end_op();
   ip = 0;
@@ -83,23 +111,31 @@ exec(char *path, char **argv)
   // Use the rest as the user stack.
   sz = PGROUNDUP(sz);
   uint64 sz1;
-  if((sz1 = uvmalloc(pagetable, sz, sz + (USERSTACK+1)*PGSIZE, PTE_W)) == 0)
+  if((sz1 = uvmalloc(pagetable, sz, sz + (USERSTACK+1)*PGSIZE, PTE_W)) == 0){
+    printf("exec: uvmalloc fallo al reservar pila\r\n");
     goto bad;
+  }
   sz = sz1;
   uvmclear(pagetable, sz-(USERSTACK+1)*PGSIZE);
   sp = sz;
   stackbase = sp - USERSTACK*PGSIZE;
 
   // Push argument strings, prepare rest of stack in ustack.
-  for(argc = 0; argv[argc]; argc++) {
-    if(argc >= MAXARG)
+   for(argc = 0; argv[argc]; argc++) {
+    if(argc >= MAXARG) {
+      printf("exec: demasiados argumentos\r\n");
       goto bad;
+    }
     sp -= strlen(argv[argc]) + 1;
     sp -= sp % 16; // riscv sp must be 16-byte aligned
-    if(sp < stackbase)
+    if(sp < stackbase){
+      printf("exec: pila desbordada\r\n");
       goto bad;
-    if(copyout(pagetable, sp, argv[argc], strlen(argv[argc]) + 1) < 0)
+    }
+    if(copyout(pagetable, sp, argv[argc], strlen(argv[argc]) + 1) < 0){
+      printf("exec: fallo copyout de argumento %ld\r\n", argc);
       goto bad;
+    }
     ustack[argc] = sp;
   }
   ustack[argc] = 0;
@@ -107,11 +143,14 @@ exec(char *path, char **argv)
   // push the array of argv[] pointers.
   sp -= (argc+1) * sizeof(uint64);
   sp -= sp % 16;
-  if(sp < stackbase)
+   if(sp < stackbase){
+    printf("exec: pila desbordada en argv[]\r\n");
     goto bad;
-  if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
+  }
+  if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0){
+    printf("exec: fallo copyout de ustack\r\n");
     goto bad;
-
+  }
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
@@ -131,9 +170,12 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  printf("exec: listo para saltar a usuario (epc=0x%ld sp=0x%ld argc=%ld)\r\n", p->trapframe->epc, sp, argc);
+
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
+  printf("exec: fallo general\r\n");
   if(pagetable)
     proc_freepagetable(pagetable, sz);
   if(ip){

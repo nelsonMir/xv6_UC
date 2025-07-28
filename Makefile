@@ -112,6 +112,12 @@ kernel/initcode.h: $(U)/initcode.out
 
 $(K)/proc.o: kernel/initcode.h
 
+$(U)/_init: $(U)/init.o $(ULIB)
+	$(LD) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(basename $@).asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(basename $@).sym
+
+
 fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
 
 
@@ -133,6 +139,10 @@ $(U)/printf.o: $(U)/printf.c
 $(U)/umalloc.o: $(U)/umalloc.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(U)/init.o: $(U)/init.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+
 # Reglas para compilar programas de usuario
 $(U)/_%: $(U)/%.o $(ULIB)
 	$(LD) -T $(U)/user.ld -o $@ $^
@@ -144,7 +154,9 @@ $(U)/%.o: $(U)/%.c
 
 # Imagen de sistema de archivos
 fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
-	mkfs/mkfs fs.img README $(UPROGS)
+	cp $(U)/_init $(U)/init
+	mkfs/mkfs fs.img README $(UPROGS) $(U)/init
+
 
 # Generar kernel/fsimg.h automáticamente desde fs.img
 kernel/fsimg.h: fs.img
@@ -166,7 +178,8 @@ clean:
 	$(U)/initcode $(U)/initcode.out $(T)/kernel $(T)/kernel.bin fs.img \
 	kernel/fsimg.h mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS) \
 	kernel/initcode.h \
-  rm -f $(U)/initcode.o $(U)/initcode.elf $(U)/initcode.out kernel/initcode.h
+  rm -f $(U)/initcode.o $(U)/initcode.elf $(U)/initcode.out kernel/initcode.h \
+  rm -f $(U)/init
 
 
 

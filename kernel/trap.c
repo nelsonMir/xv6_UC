@@ -36,6 +36,8 @@ trapinithart(void)
 void
 usertrap(void)
 {
+  printf("usertrap: scause=0x%lx sepc=0x%lx stval=0x%lx\r\n", r_scause(), r_sepc(), r_stval());
+
   int which_dev = 0;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)

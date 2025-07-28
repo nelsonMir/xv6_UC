@@ -245,11 +245,20 @@ userinit(void)
   p = allocproc();
   initproc = p;
 
+  // Cargar initcode en la dirección virtual 0
   uvmfirst(p->pagetable, initcode, initcode_len);
-  p->sz = PGSIZE;
 
+  // Mapear una página más para el stack
+  if (uvmalloc(p->pagetable, PGSIZE, 2*PGSIZE, PTE_W) == 0)
+    panic("userinit: uvmalloc");
+
+  p->sz = 2 * PGSIZE;
+
+  // EPC apunta al inicio del código
   p->trapframe->epc = 0;
-  p->trapframe->sp = PGSIZE;
+
+  // SP al final de la segunda página
+  p->trapframe->sp = 2 * PGSIZE;
 
   printf("initcode cargado, epc=%ld sz=%ld\n", p->trapframe->epc, p->sz);
 
@@ -259,6 +268,7 @@ userinit(void)
   p->state = RUNNABLE;
   release(&p->lock);
 }
+
 
 
 // Grow or shrink user memory by n bytes.

@@ -1,26 +1,20 @@
 .globl start
 .section .text
-.align 2
 start:
-        # a0 = path, a1 = argv
-        la a0, init
-        la a1, argv
-        li a7, 7   # syscall exec tiene número 7
+  la a0, init       # Dirección de "/init"
+  la a1, argv       # Dirección de argv[]
+  li a7, 7          # syscall exec
+  ecall
 
-        ecall
+  li a7, 2          # syscall exit
+  ecall
 
-exit:
-        li a7, 1   # syscall exit tiene número 1
-
-        ecall
-        j exit       # infinite loop in case exit fails
-
-.section .rodata
-.align 2
+.section .data
+.align 12          # <-- Esto es CLAVE: aleja `.data` lo suficiente
 init:
-        .string "/init"
+  .string "/init"
 
 .align 3
 argv:
-        .quad init
-        .quad 0
+  .quad init
+  .quad 0

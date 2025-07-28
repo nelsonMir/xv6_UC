@@ -434,12 +434,15 @@ sys_chdir(void)
 uint64
 sys_exec(void)
 {
+  printf("sys_exec: comenzando\n"); 
+
   char path[MAXPATH], *argv[MAXARG];
   int i;
   uint64 uargv, uarg;
 
   argaddr(1, &uargv);
   if(argstr(0, path, MAXPATH) < 0) {
+    printf("sys_exec: fallo en argstr\n");
     return -1;
   }
   memset(argv, 0, sizeof(argv));
