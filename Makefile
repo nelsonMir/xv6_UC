@@ -16,14 +16,13 @@ OBJDUMP = $(TOOLPREFIX)objdump
 
 # Flags de compilación
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
-CFLAGS += -MD -mcmodel=medany
-CFLAGS += -fno-common -nostdlib
+CFLAGS += -MD -mcmodel=medany -fno-common -nostdlib
 CFLAGS += -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset
 CFLAGS += -fno-builtin-memmove -fno-builtin-memcmp -fno-builtin-log -fno-builtin-bzero
 CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin-putc
 CFLAGS += -fno-builtin-free -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
-CFLAGS += -I. -Ikernel -Iuser
+CFLAGS += -I. -Ikernel -Iuser -I$(CURDIR)/kernel -I$(CURDIR)/user
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Linker script
@@ -59,7 +58,7 @@ OBJS = \
   $(K)/sysfile.o \
   $(K)/kernelvec.o \
   $(K)/plic.o \
-  $(K)/virtio_disk.o \
+  $(K)/ramdisk_xv6.o \
   $(K)/schedulers.o
 
 # Librerías de usuario
@@ -135,6 +134,15 @@ $(U)/%.o: $(U)/%.c
 fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode
 	mkfs/mkfs fs.img README $(UPROGS)
 
+# Generar kernel/fsimg.h automáticamente desde fs.img
+kernel/fsimg.h: fs.img
+	@echo "Convirtiendo fs.img a fsimg.h..."
+	@xxd -i fs.img > kernel/fsimg.h
+
+# Asegurarse de que ramdisk_xv6.o dependa de fsimg.h
+$(K)/ramdisk_xv6.o: $(K)/ramdisk_xv6.c kernel/fsimg.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 # mkfs
 mkfs/mkfs: mkfs/mkfs.c
 	gcc -Wall -Werror -Wno-stringop-truncation -O2 -I. -o $@ $<
@@ -143,8 +151,8 @@ mkfs/mkfs: mkfs/mkfs.c
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
-	$(U)/initcode $(U)/initcode.out $(T)/kernel fs.img \
-	mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS)
+	$(U)/initcode $(U)/initcode.out $(T)/kernel $(T)/kernel.bin fs.img \
+	kernel/fsimg.h mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS)
 
 # QEMU
 QEMU = qemu-system-riscv64

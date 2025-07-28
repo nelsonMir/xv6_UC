@@ -41,20 +41,30 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     
     printf("kinit done\n");
     kvminit();       // create kernel page table
-    printf("kvminit done\n");
+    printf("kvminit done\r\n");
     printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
     printf("kvminithart done\n");
     procinit();      // process table
+    printf("procinit done\r\n");
     trapinit();      // trap vectors
+    printf("trapinit done\r\n");
     trapinithart();  // install kernel trap vector
+    printf("trapinit hart done\r\n");
     plicinit();      // set up interrupt controller
+    printf("plicinit done\r\n");
     plicinithart();  // ask PLIC for device interrupts
+    printf("plicinithart done\r\n");
     binit();         // buffer cache
+    printf("binit done\r\n");
     iinit();         // inode table
+    printf("iinit done\r\n");
     fileinit();      // file table
+    printf("fileinit done\r\n");
     virtio_disk_init(); // emulated hard disk
+    printf("virtio_disk_init done\r\n");
     userinit();      // first user process
+    printf("userinit done\r\n");
     __sync_synchronize();
     started = 1;
   } else {
