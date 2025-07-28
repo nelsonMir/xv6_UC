@@ -1,28 +1,26 @@
-# Initial process that execs /init.
-# This code runs in user space.
-
-#include "syscall.h"
-
-# exec(init, argv)
 .globl start
+.section .text
+.align 2
 start:
+        # a0 = path, a1 = argv
         la a0, init
         la a1, argv
-        li a7, SYS_exec
+        li a7, 7   # syscall exec tiene número 7
+
         ecall
 
-# for(;;) exit();
 exit:
-        li a7, SYS_exit
+        li a7, 1   # syscall exit tiene número 1
+
         ecall
-        jal exit
+        j exit       # infinite loop in case exit fails
 
-# char init[] = "/init\0";
+.section .rodata
+.align 2
 init:
-  .string "/init\0"
+        .string "/init"
 
-# char *argv[] = { init, 0 };
-.p2align 2
+.align 3
 argv:
-  .quad init
-  .quad 0
+        .quad init
+        .quad 0

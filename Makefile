@@ -59,7 +59,7 @@ OBJS = \
   $(K)/kernelvec.o \
   $(K)/plic.o \
   $(K)/ramdisk_xv6.o \
-  $(K)/schedulers.o
+  $(K)/schedulers.o 
 
 # Librerías de usuario
 ULIB = $(U)/ulib.o $(U)/usys.o $(U)/printf.o $(U)/umalloc.o
@@ -71,7 +71,7 @@ UPROGS = \
   $(U)/_forktest \
   $(U)/_grep \
   $(U)/_init \
-  #$(U)/_kill \
+  $(U)/_kill \
   $(U)/_ln \
   $(U)/_ls \
   $(U)/_mkdir \
@@ -98,12 +98,24 @@ $(T)/kernel.bin: $(OBJS) $(linker) fs.img
 	$(OBJDUMP) -t $(T)/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(T)/kernel.sym
 	$(OBJCOPY) -O binary $(T)/kernel $(T)/kernel.bin
 
-# Initcode
 $(U)/initcode.o: $(U)/initcode.S
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(U)/initcode: $(U)/initcode.o
-	$(LD) -T $(linker) -o $@ $^
+$(U)/initcode.elf: $(U)/initcode.o $(U)/initcode.ld
+	$(LD) -T $(@D)/initcode.ld -o $@ $<
+
+$(U)/initcode.out: $(U)/initcode.elf
+	$(OBJCOPY) -O binary $< $@
+
+kernel/initcode.h: $(U)/initcode.out
+	xxd -i $< | sed 's/user_initcode_out/initcode/g; s/unsigned int initcode_len;/unsigned int initcode_len = sizeof(initcode);/' > $@
+
+$(K)/proc.o: kernel/initcode.h
+
+fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
+
+
+
 
 # Reglas para user libs
 $(U)/usys.S: $(U)/usys.pl
@@ -131,7 +143,7 @@ $(U)/%.o: $(U)/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 # Imagen de sistema de archivos
-fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode
+fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
 	mkfs/mkfs fs.img README $(UPROGS)
 
 # Generar kernel/fsimg.h automáticamente desde fs.img
@@ -152,7 +164,11 @@ clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
 	$(U)/initcode $(U)/initcode.out $(T)/kernel $(T)/kernel.bin fs.img \
-	kernel/fsimg.h mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS)
+	kernel/fsimg.h mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS) \
+	kernel/initcode.h \
+  rm -f $(U)/initcode.o $(U)/initcode.elf $(U)/initcode.out kernel/initcode.h
+
+
 
 # QEMU
 QEMU = qemu-system-riscv64

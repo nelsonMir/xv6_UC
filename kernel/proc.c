@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "initcode.h"
 
 struct cpu cpus[NCPU];
 
@@ -234,29 +235,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmfree(pagetable, sz);
 }
 
-// a user program that calls exec("/init")
-// assembled from ../user/initcode.S
-// od -t xC ../user/initcode
-uchar initcode[] = {
-  0x17, 0x05, 0x00, 0x00,  // auipc a0, 0
-  0x13, 0x85, 0x05, 0x00,  // add a0, a0, 0
-  0x97, 0x06, 0x00, 0x00,  // auipc a2, 0
-  0x93, 0x86, 0x06, 0x00,  // add a3, a2, 0
-  0x93, 0x08, 0x3b, 0x00,  // li a7, 59 (SYS_exec)
-  0x73, 0x00, 0x00, 0x00,  // ecall
-  0x93, 0x08, 0x5d, 0x00,  // li a7, 93 (SYS_exit)
-  0x73, 0x00, 0x00, 0x00,  // ecall
-  0x6f, 0xf0, 0xdf, 0xff,  // jal to loop
-  0x2f, 0x69, 0x6e, 0x69,  // "/ini"
-  0x74, 0x00,             // "t\0"
-  0x00, 0x00, 0x00, 0x00, // padding
-  0x00, 0x00, 0x00, 0x00, // padding
-  0x00, 0x00, 0x00, 0x00, // padding
-  0x00, 0x00, 0x00, 0x00  // padding
-};
 
-
-// Set up first user process.
 void
 userinit(void)
 {
@@ -265,15 +244,12 @@ userinit(void)
 
   p = allocproc();
   initproc = p;
-  
-  // allocate one user page and copy initcode's instructions
-  // and data into it.
-  uvmfirst(p->pagetable, initcode, sizeof(initcode));
+
+  uvmfirst(p->pagetable, initcode, initcode_len);
   p->sz = PGSIZE;
 
-  // prepare for the very first "return" from kernel to user.
-  p->trapframe->epc = 0;      // user program counter
-  p->trapframe->sp = PGSIZE;  // user stack pointer
+  p->trapframe->epc = 0;
+  p->trapframe->sp = PGSIZE;
 
   printf("initcode cargado, epc=%ld sz=%ld\n", p->trapframe->epc, p->sz);
 
@@ -281,9 +257,9 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
   release(&p->lock);
 }
+
 
 // Grow or shrink user memory by n bytes.
 // Return 0 on success, -1 on failure.
