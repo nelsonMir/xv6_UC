@@ -19,7 +19,7 @@ void
 virtio_disk_init(void)
 {
   initlock(&ramdisk.lock, "ramdisk");
-  printf("ramdisk_xv6: usando fs.img embebido (%d bytes)\n", fs_img_len);
+  printf("ramdisk_xv6: usando fs.img embebido (%d bytes)\r\n", fs_img_len);
 }
 
 void
@@ -29,6 +29,9 @@ virtio_disk_rw(struct buf *b, int write)
     panic("ramdisk: blockno fuera de rango");
 
   acquire(&ramdisk.lock);
+
+  printf("ramdisk: %s bloque %d (ptr=%p)\r\n", write ? "escribiendo" : "leyendo", b->blockno, fs_img + b->blockno * BSIZE);
+
 
   uchar *disk = fs_img + b->blockno * BSIZE;
   if (write)

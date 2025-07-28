@@ -22,6 +22,8 @@ int flags2perm(int flags)
 int
 exec(char *path, char **argv)
 {
+  printf("exec: intentando abrir %s\r\n", path);
+
   char *s, *last;
   int i, off;
   uint64 argc, sz = 0, sp, ustack[MAXARG], stackbase;
@@ -37,6 +39,7 @@ exec(char *path, char **argv)
     end_op();
     return -1;
   }
+  
   ilock(ip);
 
   // Check ELF header

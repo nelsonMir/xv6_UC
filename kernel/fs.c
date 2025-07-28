@@ -686,6 +686,7 @@ namex(char *path, int nameiparent, char *name)
 struct inode*
 namei(char *path)
 {
+  printf("namei: buscando %s\r\n", path);
   char name[DIRSIZ];
   return namex(path, 0, name);
 }
