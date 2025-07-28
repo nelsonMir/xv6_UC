@@ -23,35 +23,46 @@ kvmmake(void)
 
   kpgtbl = (pagetable_t) kalloc();
 
-  //debug 
+  //debug
+  printf("kpgtbl = %p\r\n", kpgtbl);
+
   if (kpgtbl == 0) {
-  printf("kvmmake: kalloc returned NULL!\n");
-  for (;;); // cuelga voluntariamente si falla
-  } 
+    printf("kvmmake: kalloc returned NULL!\n");
+    for (;;);
+  }
+
+  if ((uint64)kpgtbl % PGSIZE != 0) {
+    printf("ERROR: pagetable not aligned: %p\n", kpgtbl);
+    for(;;);
+  }
+
+  
+
   memset(kpgtbl, 0, PGSIZE);
 
-  // uart registers
+  // UART registers
   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
-  // virtio mmio disk interface
+  // Virtio mmio disk interface
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
   // PLIC
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W);
 
-  // map kernel text executable and read-only.
-  kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  // Mapea kernel text + data con margen extra
+  // Asegura que incluimos desde 0x80000000 hasta al menos 0x80800000
+  // por si el kernel binario está cargado ahí
+  kvmmap(kpgtbl, KERNBASE, KERNBASE, 0x1000000, PTE_R | PTE_X | PTE_W);
 
-  // map kernel data and the physical RAM we'll make use of.
-  kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
-
-  // map the trampoline for trap entry/exit to
-  // the highest virtual address in the kernel.
+  // Trampoline
   kvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 
-  // allocate and map a kernel stack for each process.
+  // Kernel stacks para cada proceso
   proc_mapstacks(kpgtbl);
-  
+
+  uint64 addr = (uint64)&kvminithart;
+  printf("kvminithart is at %ld\n", addr);
+
   return kpgtbl;
 }
 
@@ -60,6 +71,15 @@ void
 kvminit(void)
 {
   kernel_pagetable = kvmmake();
+
+  printf("Entry mapping 0x80400000:\n");
+  uint64 *l1 = (uint64 *)kernel_pagetable;
+  for (int i = 0; i < 512; i++) {
+    if (l1[i] & PTE_V) {
+      printf("L1[%d] = 0x%lx\n", i, l1[i]);
+
+    }
+  }
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -73,10 +93,21 @@ kvminithart()
   sfence_vma();
 
    printf("kvminithart after vma\r\n");
+  extern char _entry[];  // viene de entry_vf2.S
+  printf("trying to map entry point: %p\n", _entry);
+
+  if ((uint64)kernel_pagetable == 0) {
+  printf("ERROR: kernel_pagetable is NULL\n");
+  for(;;);
+  }
+
+  printf("MAKE_SATP: %lx\n", MAKE_SATP(kernel_pagetable));
 
   w_satp(MAKE_SATP(kernel_pagetable));
 
    printf("kvminithart after w_satp\r\n");
+   uartputc_sync('A');  // Para confirmar que la UART sigue accesible tras paginación
+
 
   // flush stale entries from the TLB.
   sfence_vma();

@@ -38,10 +38,11 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("\n");
 
     kinit();         // physical page allocator
-    printf("kernel_pagetable at %p\r\n", kernel_pagetable);
+    
     printf("kinit done\n");
     kvminit();       // create kernel page table
     printf("kvminit done\n");
+    printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
     printf("kvminithart done\n");
     procinit();      // process table
