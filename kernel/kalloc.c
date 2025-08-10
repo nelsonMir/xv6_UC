@@ -14,6 +14,23 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+// DEBUG: salida UART síncrona para trazar sin printf()
+extern void uartputc_sync(int c);
+static void puts_sync(const char *s){
+  while(*s) uartputc_sync(*s++);
+}
+static void puthex64(uint64 x){
+  for(int i=60;i>=0;i-=4){
+    int d = (x>>i)&0xF;
+    uartputc_sync(d<10 ? '0'+d : 'a'+(d-10));
+  }
+}
+
+// DEBUG: si quieres limitar el free a un trocito para probar el boot, pon 1
+#ifndef DEBUG_LIMIT_FREE
+#define DEBUG_LIMIT_FREE 0
+#endif
+
 struct run {
   struct run *next;
 };
@@ -26,17 +43,56 @@ struct {
 void
 kinit()
 {
+  // DEBUG: hitos de arranque del allocator
+  puts_sync("K1"); // llegó a kinit
+
   initlock(&kmem.lock, "kmem");
+  puts_sync("K2"); // pasó initlock
+
+  // DEBUG: imprime límites que usaremos
+  puts_sync(" end="); puthex64((uint64)end);
+  puts_sync(" top="); puthex64((uint64)PHYSTOP);
+  uartputc_sync('\r'); uartputc_sync('\n');
+
+#if DEBUG_LIMIT_FREE
+  // DEBUG: limitar el free a 1 MiB tras 'end' para ver si arranca
+  uint64 safe_start = (uint64)PGROUNDUP((uint64)end);
+  uint64 safe_top   = safe_start + 1*1024*1024; // 1 MiB
+  if(safe_top > (uint64)PHYSTOP) safe_top = (uint64)PHYSTOP;
+  freerange((void*)safe_start, (void*)safe_top);
+#else
   freerange(end, (void*)PHYSTOP);
+#endif
+
+  puts_sync("K3"); // terminó freerange()
+  uartputc_sync('\r'); uartputc_sync('\n');
 }
 
 void
 freerange(void *pa_start, void *pa_end)
 {
-  char *p;
-  p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  // DEBUG: traza de rango y progreso
+  puts_sync("F1 ");
+  puthex64((uint64)pa_start);
+  puts_sync("..");
+  puthex64((uint64)pa_end);
+  uartputc_sync('\r'); uartputc_sync('\n');
+
+  char *p = (char*)PGROUNDUP((uint64)pa_start);
+
+  uint64 cnt = 0; // DEBUG: contador de páginas liberadas
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
     kfree(p);
+    if((++cnt & 0xFF) == 0){ // cada 256 páginas
+      puts_sync("F+ ");
+      puthex64((uint64)p);
+      uartputc_sync('\r'); uartputc_sync('\n');
+    }
+  }
+
+  puts_sync("F2 "); // DEBUG: fin de bucle y última dirección tocada
+  puthex64((uint64)p);
+  uartputc_sync('\r'); uartputc_sync('\n');
 }
 
 // Free the page of physical memory pointed at by pa,

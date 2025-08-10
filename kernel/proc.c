@@ -48,15 +48,23 @@ void
 proc_mapstacks(pagetable_t kpgtbl)
 {
   struct proc *p;
-  
+
   for(p = proc; p < &proc[NPROC]; p++) {
-    char *pa = kalloc();
-    if(pa == 0)
-      panic("kalloc");
-    uint64 va = KSTACK((int) (p - proc));
-    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+    uint64 va = KSTACK((int)(p - proc));
+
+    // 2 páginas de pila contiguas (8 KiB)
+    char *pa0 = kalloc();
+    char *pa1 = kalloc();
+    if(pa0 == 0 || pa1 == 0)
+      panic("kalloc kstack");
+
+    kvmmap(kpgtbl, va,           (uint64)pa0, PGSIZE, PTE_R | PTE_W);
+    kvmmap(kpgtbl, va + PGSIZE,  (uint64)pa1, PGSIZE, PTE_R | PTE_W);
+
+    // La página inmediatamente superior (va + 2*PGSIZE) es la GUARD y NO se mapea.
   }
 }
+
 
 // initialize the proc table.
 void
