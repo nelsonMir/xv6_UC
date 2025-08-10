@@ -124,6 +124,8 @@ usertrapret(void)
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
+  printf("usertrapret(): vamos a saltar a userret() con satp=0x%lx\n", satp);
+
   // jump to userret in trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.
@@ -136,11 +138,21 @@ usertrapret(void)
 void 
 kerneltrap()
 {
+  printf("kerneltrap: entro con sp=0x%lx\n", r_sp());
   int which_dev = 0;
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
   
+   printf("kerneltrap: ra=%p sp=%p sstatus=%p sepc=%p scause=%p\n",
+         __builtin_return_address(0),
+         (void*)r_sp(),
+         (void*)sstatus,
+         (void*)sepc,
+         (void*)scause);
+
+  //backtrace();  // si lo tienes disponible, aquí ayuda mucho
+
   if((sstatus & SSTATUS_SPP) == 0)
     panic("kerneltrap: not from supervisor mode");
   if(intr_get() != 0)

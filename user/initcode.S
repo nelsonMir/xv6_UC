@@ -1,8 +1,8 @@
 .globl start
 .section .text
 start:
-  la a0, init       # Dirección de "/init"
-  la a1, argv       # Dirección de argv[]
+  la a0, init       # a0 ← dirección de "/init"
+  la a1, argv       # a1 ← dirección de argv[]
   li a7, 7          # syscall exec
   ecall
 
@@ -10,7 +10,7 @@ start:
   ecall
 
 .section .data
-.align 12          # <-- Esto es CLAVE: aleja `.data` lo suficiente
+.align 3
 init:
   .string "/init"
 

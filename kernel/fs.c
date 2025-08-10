@@ -508,6 +508,12 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   uint tot, m;
   struct buf *bp;
 
+   // DEBUG: stack
+  uint64 sp = r_sp();
+  printf("DBG writei: sp=%p  margin(0x88000000-sp)=%ld bytes\r\n",
+         (void*)sp, (long)(0x88000000ULL - sp));
+
+
   if(off > ip->size || off + n < off)
     return -1;
   if(off + n > MAXFILE*BSIZE)
@@ -519,6 +525,13 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
       break;
     bp = bread(ip->dev, addr);
     m = min(n - tot, BSIZE - off%BSIZE);
+
+    // DEBUG: destino en el buffer de bloque
+    unsigned char *dst = bp->data + (off % BSIZE);
+    printf("DBG writei: bp=%p data=%p dst=%p off=%u m=%u\r\n",
+       bp, bp->data, dst, off, m);
+
+
     if(either_copyin(bp->data + (off % BSIZE), user_src, src, m) == -1) {
       brelse(bp);
       break;

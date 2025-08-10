@@ -7,6 +7,8 @@
 #include "defs.h"
 #include "fs.h"
 
+
+
 pagetable_t kernel_pagetable;
 
 extern char etext[];
@@ -203,6 +205,8 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
   mem = kalloc();
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+  
+
   memmove(mem, src, sz);
 }
 

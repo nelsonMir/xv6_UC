@@ -23,6 +23,7 @@ CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin
 CFLAGS += -fno-builtin-free -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I. -Ikernel -Iuser -I$(CURDIR)/kernel -I$(CURDIR)/user
+CFLAGS += -O2 -g -fno-omit-frame-pointer -fno-optimize-sibling-calls
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Linker script
@@ -99,13 +100,13 @@ $(T)/kernel.bin: $(OBJS) $(linker) fs.img
 	$(OBJCOPY) -O binary $(T)/kernel $(T)/kernel.bin
 
 $(U)/initcode.o: $(U)/initcode.S
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(AS) -o $@ $<
 
 $(U)/initcode.elf: $(U)/initcode.o $(U)/initcode.ld
 	$(LD) -T $(@D)/initcode.ld -o $@ $<
 
 $(U)/initcode.out: $(U)/initcode.elf
-	$(OBJCOPY) -O binary $< $@
+	$(OBJCOPY) -O binary -j .text -j .data $< $@
 
 kernel/initcode.h: $(U)/initcode.out
 	xxd -i $< | sed 's/user_initcode_out/initcode/g; s/unsigned int initcode_len;/unsigned int initcode_len = sizeof(initcode);/' > $@
@@ -117,11 +118,9 @@ $(U)/_init: $(U)/init.o $(ULIB)
 	$(OBJDUMP) -S $@ > $(basename $@).asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(basename $@).sym
 
-
 fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
-
-
-
+	cp $(U)/_init $(U)/init
+	mkfs/mkfs fs.img README $(UPROGS) $(U)/init
 
 # Reglas para user libs
 $(U)/usys.S: $(U)/usys.pl
@@ -142,7 +141,6 @@ $(U)/umalloc.o: $(U)/umalloc.c
 $(U)/init.o: $(U)/init.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-
 # Reglas para compilar programas de usuario
 $(U)/_%: $(U)/%.o $(ULIB)
 	$(LD) -T $(U)/user.ld -o $@ $^
@@ -156,7 +154,6 @@ $(U)/%.o: $(U)/%.c
 fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode.out
 	cp $(U)/_init $(U)/init
 	mkfs/mkfs fs.img README $(UPROGS) $(U)/init
-
 
 # Generar kernel/fsimg.h automáticamente desde fs.img
 kernel/fsimg.h: fs.img
@@ -178,10 +175,7 @@ clean:
 	$(U)/initcode $(U)/initcode.out $(T)/kernel $(T)/kernel.bin fs.img \
 	kernel/fsimg.h mkfs/mkfs .gdbinit $(U)/usys.S $(UPROGS) \
 	kernel/initcode.h \
-  rm -f $(U)/initcode.o $(U)/initcode.elf $(U)/initcode.out kernel/initcode.h \
-  rm -f $(U)/init
-
-
+	$(U)/init
 
 # QEMU
 QEMU = qemu-system-riscv64

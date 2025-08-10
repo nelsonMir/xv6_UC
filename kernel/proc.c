@@ -245,6 +245,9 @@ userinit(void)
   p = allocproc();
   initproc = p;
 
+  // Imprime la dirección de la pila del kernel
+ printf("userinit: p->kstack = 0x%p\r\n", (void*)p->kstack);
+
   // Cargar initcode en la dirección virtual 0
   uvmfirst(p->pagetable, initcode, initcode_len);
 
