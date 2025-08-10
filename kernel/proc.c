@@ -5,7 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-#include "initcode.h"
+
+extern unsigned char initcode[];
+extern unsigned int  initcode_len;
+
 
 struct cpu cpus[NCPU];
 
@@ -244,6 +247,10 @@ userinit(void)
 
   p = allocproc();
   initproc = p;
+
+  extern unsigned int initcode_len;
+  printf("DEBUG initcode_len=%u\r\n", initcode_len);
+
 
   // Cargar initcode en la dirección virtual 0
   uvmfirst(p->pagetable, initcode, initcode_len);

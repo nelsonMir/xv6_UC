@@ -66,6 +66,7 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     userinit();      // first user process
     printf("userinit done\r\n");
     __sync_synchronize();
+    printf("sync_synchronize done\r\n");
     started = 1;
   } else {
     while(started == 0)
