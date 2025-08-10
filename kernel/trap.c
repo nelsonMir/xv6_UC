@@ -125,6 +125,19 @@ usertrapret(void)
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
+  //DEBUG: imprime justo antes de saltar a userret (cambiar a modo usuario)
+  printf("usertrapret: satp=0x%lx sepc=0x%lx sp=0x%lx pid=%d\r\n",
+         satp, p->trapframe->epc, p->trapframe->sp, p->pid);
+
+  // DEBUG: comprobar que las VAs críticas están mapeadas en el pagetable de USUARIO
+  uint64 pa_tramp = walkaddr(p->pagetable, TRAMPOLINE);
+  uint64 pa_tf    = walkaddr(p->pagetable, TRAPFRAME);
+  uint64 pa_text0 = walkaddr(p->pagetable, 0);
+  uint64 pa_stack = walkaddr(p->pagetable, p->trapframe->sp - 16);
+
+  printf("mapchk: trampPA=0x%lx trapframePA=0x%lx text0PA=0x%lx stackPA=0x%lx\r\n",
+       pa_tramp, pa_tf, pa_text0, pa_stack);
+
   // jump to userret in trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
   // and switches to user mode with sret.

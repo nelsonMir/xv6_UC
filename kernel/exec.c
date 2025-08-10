@@ -6,6 +6,9 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
+#include "stat.h"   // añade esto arriba de exec.
+
+
 
 static int loadseg(pde_t *, uint64, struct inode *, uint, uint);
 
@@ -37,11 +40,17 @@ exec(char *path, char **argv)
 
   if((ip = namei(path)) == 0){
     end_op();
-    printf("exec: namei fallo\r\n");
+    printf("exec: namei FAIL for \"%s\"\r\n", path);
     return -1;
   }
   
   ilock(ip);
+  // <<< LOG seguro sin acceder a ip->campos >>>
+  struct stat st;
+  stati(ip, &st);
+  printf("exec: namei OK ino=%d type=%d nlink=%d size=%ld\r\n",
+         st.ino, st.type, st.nlink, st.size);
+
 
   // Check ELF header
   if(readi(ip, 0, (uint64)&elf, 0, sizeof(elf)) != sizeof(elf)){
@@ -101,6 +110,7 @@ exec(char *path, char **argv)
 
   iunlockput(ip);
   end_op();
+  printf("exec: success, epc=0x%lx sp=0x%lx\r\n", p->trapframe->epc, p->trapframe->sp);
   ip = 0;
 
   p = myproc();

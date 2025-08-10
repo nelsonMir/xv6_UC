@@ -481,6 +481,8 @@ scheduler(void)
   //struct proc *p;
   struct cpu *c = mycpu();
 
+  //agrego latidos para ver si esta vivo 
+  int beat = 0;
   c->proc = 0;
   for(;;){
     // The most recent process to run may have had interrupts
@@ -510,6 +512,10 @@ scheduler(void)
       // nothing to run; stop running on this core until an interrupt.
       intr_on();
       asm volatile("wfi");
+    }
+
+    if((++beat & 0x3FFFF) == 0){
+    printf("scheduler: tick\r\n");
     }
   }
 }

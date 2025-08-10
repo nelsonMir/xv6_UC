@@ -140,22 +140,25 @@ static uint64 (*syscalls[])(void) = {
 [SYS_nice]    sys_nice,
 };
 
+
 void
 syscall(void)
 {
-  int num;
   struct proc *p = myproc();
+  int num = p->trapframe->a7;
 
-  num = p->trapframe->a7;
-  printf("syscall: num=%d\r\n", num);
+  // Traza solo las llamadas clave para arranque
+  if (num == SYS_exec || num == SYS_open || num == SYS_read || num == SYS_write) {
+    printf("syscall: num=%d pid=%d (%s)\r\n", num, p->pid, p->name);
+  }
 
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
   } else {
-    printf("%d %s: unknown sys call %d\n",
-            p->pid, p->name, num);
+    printf("%d %s: unknown sys call %d\r\n",
+           p->pid, p->name, num);
     p->trapframe->a0 = -1;
   }
 }

@@ -61,6 +61,10 @@ initlog(int dev, struct superblock *sb)
   log.start = sb->logstart;
   log.size = sb->nlog;
   log.dev = dev;
+
+  printf("initlog: start=%u size=%u dev=%u\r\n",
+         log.start, log.size, log.dev); // DEBUG
+
   recover_from_log();
 }
 
@@ -79,16 +83,24 @@ install_trans(int recovering)
       bunpin(dbuf);
     brelse(lbuf);
     brelse(dbuf);
+
+    // DEBUG: mostrar bloque copiado
+    printf("install_trans: copy blk %u -> blk %u\r\n",
+           log.start+tail+1, log.lh.block[tail]);
   }
 }
 
 // Read the log header from disk into the in-memory log header
+// Lee la cabecera del log desde disco a memoria.
 static void
 read_head(void)
 {
   struct buf *buf = bread(log.dev, log.start);
   struct logheader *lh = (struct logheader *) (buf->data);
   int i;
+
+  printf("read_head: n=%d\r\n", lh->n);  // DEBUG: ver número de bloques en log
+
   log.lh.n = lh->n;
   for (i = 0; i < log.lh.n; i++) {
     log.lh.block[i] = lh->block[i];
@@ -99,12 +111,16 @@ read_head(void)
 // Write in-memory log header to disk.
 // This is the true point at which the
 // current transaction commits.
+// Escribe la cabecera del log desde memoria a disco.
 static void
 write_head(void)
 {
   struct buf *buf = bread(log.dev, log.start);
   struct logheader *hb = (struct logheader *) (buf->data);
   int i;
+
+  printf("write_head: n=%d\r\n", log.lh.n);  // DEBUG: confirmar valor que se escribe
+
   hb->n = log.lh.n;
   for (i = 0; i < log.lh.n; i++) {
     hb->block[i] = log.lh.block[i];
@@ -116,33 +132,44 @@ write_head(void)
 static void
 recover_from_log(void)
 {
+  printf("recover_from_log: start\r\n"); // DEBUG
+
   read_head();
-  install_trans(1); // if committed, copy from log to disk
+  install_trans(1);
   log.lh.n = 0;
-  write_head(); // clear the log
+  write_head();
+
+  printf("recover_from_log: end\r\n"); // DEBUG
 }
 
 // called at the start of each FS system call.
+// Llamada al inicio de cada syscall de FS.
+// Reserva espacio en el log y espera si se está comiteando o no hay espacio.
 void
 begin_op(void)
 {
   acquire(&log.lock);
   while(1){
     if(log.committing){
+      if (log.outstanding == 0)
+        printf("begin_op: committing (out=0)\r\n");
       sleep(&log, &log.lock);
     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
-      // this op might exhaust log space; wait for commit.
+      // Esta op podría agotar el log → esperar commit
+      printf("begin_op: throttle (n=%d,out=%d)\r\n", log.lh.n, log.outstanding);
       sleep(&log, &log.lock);
     } else {
       log.outstanding += 1;
+      if (log.outstanding <= 4)
+        printf("begin_op: out=%d\r\n", log.outstanding);
       release(&log.lock);
       break;
     }
   }
 }
 
-// called at the end of each FS system call.
-// commits if this was the last outstanding operation.
+// Llamada al final de cada syscall de FS.
+// Si es la última operación pendiente, comitea.
 void
 end_op(void)
 {
@@ -150,26 +177,27 @@ end_op(void)
 
   acquire(&log.lock);
   log.outstanding -= 1;
+  if (log.outstanding <= 4)
+    printf("end_op: out=%d\r\n", log.outstanding);
   if(log.committing)
     panic("log.committing");
   if(log.outstanding == 0){
     do_commit = 1;
     log.committing = 1;
+    printf("commit: start\r\n");
   } else {
-    // begin_op() may be waiting for log space,
-    // and decrementing log.outstanding has decreased
-    // the amount of reserved space.
+    // begin_op() puede estar esperando por espacio → despertarlo.
     wakeup(&log);
   }
   release(&log.lock);
 
   if(do_commit){
-    // call commit w/o holding locks, since not allowed
-    // to sleep with locks.
-    commit();
+    // No mantener locks al dormir.
+    commit();  // ← Si se cuelga aquí, veremos que no aparece "commit: done"
     acquire(&log.lock);
     log.committing = 0;
     wakeup(&log);
+    printf("commit: done\r\n");
     release(&log.lock);
   }
 }
@@ -194,11 +222,13 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
+    printf("commit: n=%d\r\n", log.lh.n); // DEBUG: inicio del commit
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
     install_trans(0); // Now install writes to home locations
     log.lh.n = 0;
     write_head();    // Erase the transaction from the log
+    printf("commit: done\r\n"); // DEBUG: commit terminado
   }
 }
 

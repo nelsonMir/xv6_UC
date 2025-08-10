@@ -85,10 +85,17 @@ bget(uint dev, uint blockno)
       return b;
     }
   }
+
+  // No hay libres: esto no debería pasar con NBUF decente, pero si pasa lo veremos.
+  printf("bget: no free buffers, sleeping...\n");
+  sleep(&bcache, &bcache.lock);
+  release(&bcache.lock);
+  // (en xv6 original esto es panic; aquí lo dejo así para ver si ocurre)
   panic("bget: no buffers");
 }
 
 // Return a locked buf with the contents of the indicated block.
+// Si el buffer no es válido, lo leemos del disco (RAM en este caso).
 struct buf*
 bread(uint dev, uint blockno)
 {
@@ -96,23 +103,31 @@ bread(uint dev, uint blockno)
 
   b = bget(dev, blockno);
   if(!b->valid) {
-    virtio_disk_rw(b, 0);
+    if (blockno < 16)
+      printf("bread: miss blk %u\r\n", blockno);
+    virtio_disk_rw(b, 0); // leer del ramdisk
     b->valid = 1;
+  } else {
+    if (blockno < 16)
+      printf("bread: hit blk %u\r\n", blockno);
   }
   return b;
 }
 
-// Write b's contents to disk.  Must be locked.
+// Write b's contents to disk. Must be locked.
+// Marca el buffer como sucio (B_DIRTY) y lo envía al ramdisk.
 void
 bwrite(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("bwrite");
+  if (b->blockno < 16)
+    printf("bwrite: blk %u\r\n", b->blockno);
   virtio_disk_rw(b, 1);
 }
 
 // Release a locked buffer.
-// Move to the head of the most-recently-used list.
+// Lo mueve a la cabeza de la lista MRU si ya no lo usa nadie.
 void
 brelse(struct buf *b)
 {
@@ -124,7 +139,9 @@ brelse(struct buf *b)
   acquire(&bcache.lock);
   b->refcnt--;
   if (b->refcnt == 0) {
-    // no one is waiting for it.
+    if (b->blockno < 16)
+      printf("brelse: blk %u\r\n", b->blockno);
+    // Nadie lo espera → poner en la lista MRU
     b->next->prev = b->prev;
     b->prev->next = b->next;
     b->next = bcache.head.next;
@@ -132,7 +149,6 @@ brelse(struct buf *b)
     bcache.head.next->prev = b;
     bcache.head.next = b;
   }
-  
   release(&bcache.lock);
 }
 

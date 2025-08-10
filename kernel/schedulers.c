@@ -36,7 +36,13 @@ int schedule_round_robin(struct cpu *c){
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        printf("sched rr: run pid=%d (%s)\r\n", p->pid, p->name);
+
         swtch(&c->context, &p->context);
+
+         // Hemos vuelto del proceso
+        printf("sched rr: back pid=%d (%s) state=%d\r\n", p->pid, p->name, p->state);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
