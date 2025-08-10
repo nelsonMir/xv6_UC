@@ -25,7 +25,7 @@ void main(unsigned long hartid, unsigned long dtb_pa)
    // Mensaje de depuración básico, directo a UART
   uartputc_sync('X' + hartid % 26);  // imprime letras distintas por hart  // <-- Si ves 'X' en minicom, UART funciona correctamente
   //sbi_console = 1;  //Activar salida por consola OpenSBI (UART por defecto no iniciado)
-  printf("xv6-UC: starting on hart %ld...\n", hartid);
+  printf("xv6-UC: starting on hart %ld...\r\n", hartid);
 
   if(boothartid == -1){
 
@@ -34,17 +34,17 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     consoleinit();
     printfinit();
     printf("\n");
-    printf("xv6-UC version kernel is booting\n");
+    printf("xv6-UC version kernel is booting\r\n");
     printf("\n");
 
     kinit();         // physical page allocator
     
-    printf("kinit done\n");
+    printf("kinit done\r\n");
     kvminit();       // create kernel page table
     printf("kvminit done\r\n");
     printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
-    printf("kvminithart done\n");
+    printf("kvminithart done\r\n");
     procinit();      // process table
     printf("procinit done\r\n");
     trapinit();      // trap vectors

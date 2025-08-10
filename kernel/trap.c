@@ -27,6 +27,7 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+   w_sscratch(0);                // ← esencial para el prologo de kernelvec
 }
 
 //

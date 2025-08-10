@@ -45,7 +45,12 @@
 
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
-#define KSTACK(p) (TRAMPOLINE - ((p)+1)* 2*PGSIZE)
+// Tamaño de pila de kernel y guardia
+#define KSTACK_SIZE   (2*PGSIZE)     // 8 KiB de pila
+#define KSTACK_GUARD  (1*PGSIZE)     // 4 KiB sin mapear
+// Cada pila de kernel se coloca *debajo* del TRAPFRAME, con una guard por encima.
+// OJO: la guard page es la de *arriba*; NO se mapea.
+#define KSTACK(p) (TRAMPOLINE - ((p)+1)*(KSTACK_SIZE + KSTACK_GUARD))
 
 // User memory layout.
 // Address zero first:
