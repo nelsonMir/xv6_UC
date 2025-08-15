@@ -16,21 +16,21 @@ plicinit(void)
   *(uint32*)(PLIC + VIRTIO0_IRQ*4) = 1;
 }
 
-static inline void
-plic_enable_irq(int hart, int irq)
+// Habilita un IRQ en el PLIC para este hart en S-mode (maneja ids > 31)
+static inline void plic_enable_irq(int hart, int irq)
 {
-  volatile uint32 *senable_base = (uint32*)PLIC_SENABLE(hart);
+  volatile uint32 *en = (uint32*) PLIC_SENABLE(hart);
   int word = irq / 32;
   int bit  = irq % 32;
-  senable_base[word] |= (1u << bit);
+  en[word] |= (1u << bit);
 }
+
 
 void
 plicinithart(void)
 {
   int hart = cpuid();
 
-  // habilitar UART y VIRTIO para este hart en S-mode
   plic_enable_irq(hart, UART0_IRQ);
   plic_enable_irq(hart, VIRTIO0_IRQ);
 

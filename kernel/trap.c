@@ -256,6 +256,7 @@ devintr()
     // --- Fallback: POLLING UART cada tick ---
     uartintr();                   // ← hace lectura de DR si hay datos, sin IRQ
     // ---------------------------------------
+    uart_debug_poll();   // sonda adicional
     return 2;
   }
 

@@ -35,6 +35,15 @@
 #define LSR 5                 // line status register
 #define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
 #define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
+//para que la consola responda agrego unas macros
+#define MCR 4                 // Modem Control Register
+#define MCR_DTR   0x01        // Data Terminal Ready
+#define MCR_RTS   0x02        // Request To Send
+#define MCR_OUT2  0x08        // Habilita routing de IRQ en muchos 16550
+#define MCR_LOOP  0x10        // loopback interno
+#define IIR 2                 // Interrupt Identification Register
+#define IIR_NOPEND 0x01       // bit0=1 => no hay IRQ pendiente
+#define IIR 2
 
 #define ReadReg(reg) (*(Reg(reg)))
 #define WriteReg(reg, v) (*(Reg(reg)) = (v))
@@ -53,27 +62,23 @@ void uartstart();
 void
 uartinit(void)
 {
-  // disable interrupts.
+  // deshabilita IRQs de momento
   WriteReg(IER, 0x00);
 
-  // special mode to set baud rate.
+  // entra en modo divisor (latch) y programa baud (lo que ya tengas)
   WriteReg(LCR, LCR_BAUD_LATCH);
+  WriteReg(0, 0x03);   // DLL (ajusta si lo necesitas)
+  WriteReg(1, 0x00);   // DLM
+  WriteReg(LCR, LCR_EIGHT_BITS);   // 8N1
 
-  // LSB for baud rate of 38.4K.
-  WriteReg(0, 0x03);
-
-  // MSB for baud rate of 38.4K.
-  WriteReg(1, 0x00);
-
-  // leave set-baud mode,
-  // and set word length to 8 bits, no parity.
-  WriteReg(LCR, LCR_EIGHT_BITS);
-
-  // reset and enable FIFOs.
+  // FIFO enable + clear
   WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
 
-  // enable transmit and receive interrupts.
-  WriteReg(IER, IER_TX_ENABLE | IER_RX_ENABLE);
+  // **CLAVE**: Levanta DTR/RTS y OUT2
+  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
+
+  // habilita RX (y TX) por si usas IRQ luego
+  WriteReg(IER, IER_RX_ENABLE | IER_TX_ENABLE);
 
   initlock(&uart_tx_lock, "uart");
 }
@@ -177,6 +182,12 @@ uartgetc(void)
 void
 uartintr(void)
 {
+   // --- DEBUG: imprime motivo del IRQ ---
+  unsigned char iir = ReadReg(IIR) & 0xff;
+  unsigned char lsr = ReadReg(LSR) & 0xff;
+  printf("UART IRQ: IIR=0x%x LSR=0x%x\n", iir, lsr);
+
+
   // read and process incoming characters.
   while(1){
     int c = uartgetc();
@@ -189,4 +200,68 @@ uartintr(void)
   acquire(&uart_tx_lock);
   uartstart();
   release(&uart_tx_lock);
+}
+
+//------------------------------
+//mas funciones de debug para hacer un eco en cruso + sonda LSR (para ver si llega algo al UART)
+static inline int uart_kbhit(void){
+  return (ReadReg(LSR) & LSR_RX_READY) != 0;
+}
+
+static inline int uart_getc_nb(void){
+  if(uart_kbhit()) return ReadReg(RHR);
+  return -1;
+}
+
+void uart_debug_poll(void){
+  for (int i = 0; i < 16; i++){
+    int c = uart_getc_nb();
+    if (c < 0) break;
+    // eco "duro" por hardware, para que veas tu tecla
+    if (c == '\r') uartputc_sync('\n');
+    uartputc_sync(c);
+    // y además entrégalo al subsistema de consola/xv6
+    consoleintr(c);
+  }
+}
+
+// Devuelve 0 si pasó (recibió lo enviado), -1 si falló.
+int uart_selftest(void)
+{
+  unsigned char lcr = ReadReg(LCR);
+  unsigned char mcr = ReadReg(MCR);
+  unsigned char ier = ReadReg(IER);
+  unsigned char fcr = ReadReg(FCR);
+  int ok = -1;
+
+  // Silencia IRQs y limpia FIFOs
+  WriteReg(IER, 0x00);
+  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
+
+  // Activa loopback y levanta líneas de módem
+  WriteReg(MCR, (mcr | MCR_LOOP | MCR_DTR | MCR_RTS | MCR_OUT2));
+
+  // Envía un patrón con muchos flancos
+  WriteReg(THR, 0x55);
+
+  // Espera a que aparezca en RHR
+  for (volatile int i = 0; i < 1000000; i++) {
+    unsigned char lsr = ReadReg(LSR);
+    if (lsr & LSR_RX_READY) {
+      int c = ReadReg(RHR);
+      printf("UART selftest: LSR=0x%02x, RHR=0x%02x\r\n", lsr, c);
+      if (c == 0x55) ok = 0;
+      break;
+    }
+  }
+
+  // Restaura estado previo
+  WriteReg(MCR, mcr);
+  WriteReg(IER, ier);
+  WriteReg(FCR, fcr);
+  WriteReg(LCR, lcr);
+
+  if (ok != 0)
+    printf("UART selftest: FALLÓ (no se leyó eco en loopback)\r\n");
+  return ok;
 }

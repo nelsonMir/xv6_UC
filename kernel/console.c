@@ -184,6 +184,7 @@ consoleinit(void)
   initlock(&cons.lock, "cons");
 
   uartinit();
+  uart_selftest();  // <<< imprime lo que pasó
 
   // connect read and write system calls
   // to consoleread and consolewrite.

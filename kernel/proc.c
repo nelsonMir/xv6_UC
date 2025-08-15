@@ -537,6 +537,13 @@ scheduler(void)
   int beat = 0;
   c->proc = 0;
   for(;;){
+
+    // Sonda: recoge RX aunque no haya IRQs ni timer
+    uart_debug_poll();
+    // Fallback: intenta chupar del UART en cada iteración
+    // (esto es barato; solo lee si hay LSR_RX_READY)
+    uartintr();
+
     // The most recent process to run may have had interrupts
     // turned off; enable them to avoid a deadlock if all
     // processes are waiting.
