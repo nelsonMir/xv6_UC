@@ -213,20 +213,33 @@ proc_pagetable(struct proc *p)
   if(pagetable == 0)
     return 0;
 
+  // PRODUCCIÓN: TRAMPOLINE/TRAPFRAME SIN PTE_U (solo supervisor).
+  // En depuración NO añadas PTE_U aquí, o S-mode no podrá acceder con SUM=0.
+  int trampperm = PTE_R | PTE_X | PTE_A | PTE_D;  // <- sin PTE_U
+  int tfperm    = PTE_R | PTE_W | PTE_A | PTE_D;  // <- sin PTE_U
+
+  // OJO con el PA que uso para “trampoline”:
+  // (uint64)trampoline debe ser una PA válida. Si en tu port no es identidad,
+  // usa kvmpa((uint64)trampoline) para obtener la PA real del código del trampolín.
+  extern char trampoline[];
+  uint64 tramp_pa = (uint64)trampoline;
+  // tramp_pa = kvmpa((uint64)trampoline); // <- usa esto si tu kernel no es identidad VA=PA
+
   // map the trampoline code (for system call return)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
-  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
+  if (mappages(pagetable, TRAMPOLINE, PGSIZE, tramp_pa, trampperm) < 0) {
     uvmfree(pagetable, 0);
     return 0;
   }
 
-  // map the trapframe page just below the trampoline page, for
-  // trampoline.S.
-  if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
+  // TRAPFRAME debe apuntar a la PA de la página que kalloc() te dio.
+  // Si p->trapframe fuese una VA de kernel (no PA), usa kvmpa().
+  uint64 tf_pa = (uint64)p->trapframe;
+  // tf_pa = kvmpa((uint64)p->trapframe); // <- si no tienes identidad VA=PA
+
+  if (mappages(pagetable, TRAPFRAME, PGSIZE, tf_pa, tfperm) < 0) {
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
     uvmfree(pagetable, 0);
     return 0;
@@ -234,6 +247,7 @@ proc_pagetable(struct proc *p)
 
   return pagetable;
 }
+
 
 // Free a process's page table, and free the
 // physical memory it refers to.
@@ -256,14 +270,34 @@ userinit(void)
   initproc = p;
 
   extern unsigned int initcode_len;
+  // extern char trampoline[];   // ← ya no es necesario aquí
   printf("DEBUG initcode_len=%u\r\n", initcode_len);
 
+  // *** OJO ***
+  // No mapear TRAMPOLINE/TRAPFRAME aquí: parece que allocproc()/proc_pagetable()
+  // ya los mapea en el pagetable de USUARIO (por eso salta "remap" si lo repetimos).
 
+  extern char trampoline[];   // símbolo del trampolín
+
+  // Asegurar TRAMPOLINE en el pagetable de USUARIO (supervisor-only: sin U)
+  pte_t *pte = walk(p->pagetable, TRAMPOLINE, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0){
+    if(mappages(p->pagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R|PTE_X) != 0)
+      panic("userinit: map TRAMPOLINE");
+  }
+
+  // Asegurar TRAPFRAME en el pagetable de USUARIO (supervisor-only: sin U)
+  pte = walk(p->pagetable, TRAPFRAME, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0){
+    if(mappages(p->pagetable, TRAPFRAME, PGSIZE, (uint64)p->trapframe, PTE_R|PTE_W) != 0)
+      panic("userinit: map TRAPFRAME");
+  }
   // Cargar initcode en la dirección virtual 0
   uvmfirst(p->pagetable, initcode, initcode_len);
 
   // Mapear una página más para el stack
-  if (uvmalloc(p->pagetable, PGSIZE, 2*PGSIZE, PTE_W) == 0)
+  // ⚠️ Añadir PTE_U (y PTE_R) para que la vea el modo usuario
+  if (uvmalloc(p->pagetable, PGSIZE, 2*PGSIZE, PTE_R | PTE_W | PTE_U) == 0)
     panic("userinit: uvmalloc");
 
   p->sz = 2 * PGSIZE;
@@ -271,8 +305,24 @@ userinit(void)
   // EPC apunta al inicio del código
   p->trapframe->epc = 0;
 
+  // --- Parche de diagnóstico: forzar U en la PTE de la pila ---
+  pte_t *stkpte = walk(p->pagetable, PGSIZE, 0);   // VA 0x1000
+  if(stkpte == 0)
+    panic("userinit: no hay PTE para la pila (0x1000)");
+
+  uint64 oldpte = *stkpte;
+  *stkpte |= (PTE_U | PTE_R);   // Asegura U y R
+  sfence_vma();                 // Asegura que la TLB vea el cambio
+
+  printf("DEBUG stack PTE old=0x%lx new=0x%lx\r\n", oldpte, *stkpte);
+  // --- fin parche ---
+
   // SP al final de la segunda página
   p->trapframe->sp = 2 * PGSIZE;
+
+  // (Opcional) Comprobación inmediata
+  // uint64 spa = walkaddr(p->pagetable, p->trapframe->sp - 16);
+  // printf("DEBUG stack walk: pa=0x%lx\r\n", spa);
 
   printf("initcode cargado, epc=%ld sz=%ld\n", p->trapframe->epc, p->sz);
 
@@ -282,6 +332,8 @@ userinit(void)
   p->state = RUNNABLE;
   release(&p->lock);
 }
+
+
 
 
 
@@ -509,6 +561,8 @@ scheduler(void)
     }
 
     if(found == 0) {
+       // Fallback: chupar del UART por polling si no hay IRQs
+      uartintr();              // ← lee RHR si LSR_RX_READY
       // nothing to run; stop running on this core until an interrupt.
       intr_on();
       asm volatile("wfi");

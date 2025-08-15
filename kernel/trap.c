@@ -27,6 +27,13 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+
+  // Habilitar interrupciones de S-mode:
+  //  - SEIE: external
+  //  - STIE: timer
+  //  - SSIE: software
+  w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
+
    w_sscratch(0);                // ← esencial para el prologo de kernelvec
 }
 
@@ -71,8 +78,8 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    printf("usertrap(): unexpected scause 0x%lx pid=%d\r\n", r_scause(), p->pid);
+    printf("            sepc=0x%lx stval=0x%lx\r\n", r_sepc(), r_stval());
     setkilled(p);
   }
 
@@ -125,18 +132,41 @@ usertrapret(void)
   // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
 
-  //DEBUG: imprime justo antes de saltar a userret (cambiar a modo usuario)
-  printf("usertrapret: satp=0x%lx sepc=0x%lx sp=0x%lx pid=%d\r\n",
-         satp, p->trapframe->epc, p->trapframe->sp, p->pid);
+  ///DEBUG: imprime justo antes de saltar a userret (cambiar a modo usuario)
+printf("usertrapret: satp=0x%lx sepc=0x%lx sp=0x%lx pid=%d\r\n",
+       satp, p->trapframe->epc, p->trapframe->sp, p->pid);
 
-  // DEBUG: comprobar que las VAs críticas están mapeadas en el pagetable de USUARIO
-  uint64 pa_tramp = walkaddr(p->pagetable, TRAMPOLINE);
-  uint64 pa_tf    = walkaddr(p->pagetable, TRAPFRAME);
-  uint64 pa_text0 = walkaddr(p->pagetable, 0);
-  uint64 pa_stack = walkaddr(p->pagetable, p->trapframe->sp - 16);
+// TRAMPOLINE/TRAPFRAME: kernel pagetable
+uint64 pa_tramp = kvmpa(TRAMPOLINE);
+uint64 pa_tf    = kvmpa((uint64)p->trapframe);
 
-  printf("mapchk: trampPA=0x%lx trapframePA=0x%lx text0PA=0x%lx stackPA=0x%lx\r\n",
-       pa_tramp, pa_tf, pa_text0, pa_stack);
+// USER: texto OK
+uint64 pa_text0 = walkaddr_reason(p->pagetable, 0);
+
+// USER: pila — evitar borde superior
+uint64 sp  = p->trapframe->sp;        // 0x2000
+uint64 sva = PGROUNDDOWN(sp - 1);     // 0x1000
+// Prueba explícita con la VA exacta de la página de pila
+uint64 pa_stack = walkaddr_reason(p->pagetable, sva);
+
+// (extra) chequeo directo a 0x1000 por si sva cambia
+uint64 pa_stack_1000 = walkaddr_reason(p->pagetable, PGSIZE);
+
+printf("mapchk: trampPA=0x%lx trapframePA=0x%lx text0PA=0x%lx stackPA=0x%lx (sva=0x%lx) stackPA@0x1000=0x%lx\r\n",
+       pa_tramp, pa_tf, pa_text0, pa_stack, sva, pa_stack_1000);
+
+  //mas prints de DEBUG 
+  pte_t *utrp = walk(p->pagetable, TRAMPOLINE, 0);
+pte_t *utf  = walk(p->pagetable, TRAPFRAME, 0);
+printf("user PTE TRAMP: %s pte=0x%lx [V=%d U=%d R=%d W=%d X=%d]\r\n",
+       utrp?"ok":"NULL", utrp?*utrp:0,
+       utrp?!!(*utrp&PTE_V):0, utrp?!!(*utrp&PTE_U):0,
+       utrp?!!(*utrp&PTE_R):0, utrp?!!(*utrp&PTE_W):0, utrp?!!(*utrp&PTE_X):0);
+printf("user PTE TF   : %s pte=0x%lx [V=%d U=%d R=%d W=%d X=%d]\r\n",
+       utf?"ok":"NULL", utf?*utf:0,
+       utf?!!(*utf&PTE_V):0, utf?!!(*utf&PTE_U):0,
+       utf?!!(*utf&PTE_R):0, utf?!!(*utf&PTE_W):0, utf?!!(*utf&PTE_X):0);
+
 
   // jump to userret in trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
@@ -144,6 +174,8 @@ usertrapret(void)
   uint64 trampoline_userret = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64))trampoline_userret)(satp);
 }
+
+
 
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
@@ -202,33 +234,31 @@ devintr()
 {
   uint64 scause = r_scause();
 
+  // External interrupt via PLIC
   if(scause == 0x8000000000000009L){
-    // this is a supervisor external interrupt, via PLIC.
-
-    // irq indicates which device interrupted.
     int irq = plic_claim();
-
     if(irq == UART0_IRQ){
-      uartintr();
+      uartintr();                 // RX/TX desde UART
     } else if(irq == VIRTIO0_IRQ){
       virtio_disk_intr();
     } else if(irq){
-      printf("unexpected interrupt irq=%d\n", irq);
+      // DEBUG: ver qué IRQ llega realmente (por si UART0_IRQ es distinto)
+      printf("devintr: unexpected irq=%d\n", irq);
     }
-
-    // the PLIC allows each device to raise at most one
-    // interrupt at a time; tell the PLIC the device is
-    // now allowed to interrupt again.
     if(irq)
       plic_complete(irq);
-
     return 1;
-  } else if(scause == 0x8000000000000005L){
-    // timer interrupt.
-    clockintr();
-    return 2;
-  } else {
-    return 0;
   }
+
+  // Software timer interrupt (xv6 usa esta ruta para el “tick”)
+  if(scause == 0x8000000000000001L){
+    clockintr();
+    // --- Fallback: POLLING UART cada tick ---
+    uartintr();                   // ← hace lectura de DR si hay datos, sin IRQ
+    // ---------------------------------------
+    return 2;
+  }
+
+  return 0;
 }
 

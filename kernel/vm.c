@@ -12,6 +12,16 @@ pagetable_t kernel_pagetable;
 extern char etext[];
 extern char trampoline[];
 
+//nuevo helper 
+uint64
+kvmpa(uint64 va)
+{
+  pte_t *pte = walk(kernel_pagetable, va, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0)
+    panic("kvmpa: no PTE");
+  return PTE2PA(*pte) | (va & (PGSIZE - 1));
+}
+
 pagetable_t kvmmake(void)
 {
   pagetable_t kpgtbl = (pagetable_t) kalloc();
@@ -72,7 +82,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      if(!alloc || (pagetable = (pagetable_t)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
@@ -103,6 +113,37 @@ walkaddr(pagetable_t pagetable, uint64 va)
   pa = PTE2PA(*pte);
   return pa;
 }
+
+// DEBUG: igual que walkaddr(), pero imprime el motivo del fallo.
+uint64
+walkaddr_reason(pagetable_t pagetable, uint64 va)
+{
+  if(va >= MAXVA){
+    printf("walkaddr_reason: va 0x%lx >= MAXVA 0x%lx\n", va, (uint64)MAXVA);
+    return 0;
+  }
+  pte_t *pte = walk(pagetable, va, 0);
+  if(pte == 0){
+    printf("walkaddr_reason: no PTE para VA 0x%lx\n", va);
+    return 0;
+  }
+  uint64 v = *pte;
+  if((v & PTE_V) == 0){
+    printf("walkaddr_reason: PTE no V para VA 0x%lx (pte=0x%lx)\n", va, v);
+    return 0;
+  }
+  if((v & PTE_U) == 0){
+    printf("walkaddr_reason: PTE sin U para VA 0x%lx (pte=0x%lx)\n", va, v);
+    return 0;
+  }
+  uint64 pa = PTE2PA(v);
+  // Info extra por si acaso
+  printf("walkaddr_reason: OK VA 0x%lx -> PA 0x%lx PTE=0x%lx [V=%d U=%d R=%d W=%d X=%d]\n",
+         va, pa, v,
+         !!(v&PTE_V), !!(v&PTE_U), !!(v&PTE_R), !!(v&PTE_W), !!(v&PTE_X));
+  return pa;
+}
+
 
 // add a mapping to the kernel page table.
 // only used when booting.
@@ -202,9 +243,16 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
     panic("uvmfirst: more than a page");
   mem = kalloc();
   memset(mem, 0, PGSIZE);
-  mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+
+  // Si quieres ser estricto, quita W en texto: PTE_R|PTE_X|PTE_U|PTE_A
+  // Para mantener tu estado actual (W=1), añade también PTE_D.
+  if(mappages(pagetable, 0, PGSIZE, (uint64)mem,
+              PTE_R | PTE_X | PTE_U | PTE_A | PTE_W | PTE_D) != 0)
+    panic("uvmfirst: mappages");
+
   memmove(mem, src, sz);
 }
+
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
@@ -225,7 +273,13 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
+
+    // Siempre pon A; si es escribible, pon también D.
+    int perm = PTE_R | PTE_U | PTE_A | xperm;
+    if(xperm & PTE_W)
+      perm |= PTE_D;
+
+    if(mappages(pagetable, a, PGSIZE, (uint64)mem, perm) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
@@ -233,6 +287,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   }
   return newsz;
 }
+
 
 // Deallocate user pages to bring the process size from oldsz to
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz

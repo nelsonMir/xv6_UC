@@ -60,17 +60,24 @@ morecore(uint nu)
   return freep;
 }
 
+// user/ulib.c o similar
 void*
 malloc(uint nbytes)
 {
   Header *p, *prevp;
   uint nunits;
 
+  // Manejo rápido de nbytes==0 (opcional; evita pedir encabezado sin datos)
+  if(nbytes == 0)
+    return 0;
+
   nunits = (nbytes + sizeof(Header) - 1)/sizeof(Header) + 1;
+
   if((prevp = freep) == 0){
     base.s.ptr = freep = prevp = &base;
     base.s.size = 0;
   }
+
   for(p = prevp->s.ptr; ; prevp = p, p = p->s.ptr){
     if(p->s.size >= nunits){
       if(p->s.size == nunits)
@@ -83,8 +90,13 @@ malloc(uint nbytes)
       freep = prevp;
       return (void*)(p + 1);
     }
-    if(p == freep)
-      if((p = morecore(nunits)) == 0)
-        return 0;
+
+    if(p == freep){
+      // Pedir más memoria al sistema si hemos dado la vuelta a la lista libre
+      p = morecore(nunits);
+      if(p == 0)
+        return 0;  // sin memoria
+      // Si morecore() tuvo éxito, el bucle continúa y reintenta con la nueva arena
+    }
   }
 }
