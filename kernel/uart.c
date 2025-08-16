@@ -1,7 +1,6 @@
 //
 // low-level driver routines for 16550a UART.
 //
-
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -13,7 +12,24 @@
 // the UART control registers are memory-mapped
 // at address UART0. this macro returns the
 // address of one of the registers.
-#define Reg(reg) ((volatile unsigned char *)(UART0 + 4 * (reg)))
+//
+// *** Acceso MMIO via helpers con stride dinámico (1 u 4) y acceso 32-bit. ***
+static int uart_stride = 4; // probamos en uartinit() y ajustamos
+
+static inline volatile uint32 *uart_reg_ptr32(int reg)
+{
+  return (volatile uint32 *)(UART0 + (uart_stride * reg));
+}
+
+static inline unsigned char ReadReg(int reg)
+{
+  return (unsigned char)(*uart_reg_ptr32(reg) & 0xFF);
+}
+
+static inline void WriteReg(int reg, unsigned char v)
+{
+  *uart_reg_ptr32(reg) = (uint32)v;
+}
 
 
 // the UART control registers.
@@ -32,21 +48,18 @@
 #define LCR 3                 // line control register
 #define LCR_EIGHT_BITS (3<<0)
 #define LCR_BAUD_LATCH (1<<7) // special mode to set baud rate
-#define LSR 5                 // line status register
-#define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
-#define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
-//para que la consola responda agrego unas macros
 #define MCR 4                 // Modem Control Register
 #define MCR_DTR   0x01        // Data Terminal Ready
 #define MCR_RTS   0x02        // Request To Send
 #define MCR_OUT2  0x08        // Habilita routing de IRQ en muchos 16550
 #define MCR_LOOP  0x10        // loopback interno
+#define LSR 5                 // line status register
+#define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
+#define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
+//para que la consola responda agrego unas macros
 #define IIR 2                 // Interrupt Identification Register
 #define IIR_NOPEND 0x01       // bit0=1 => no hay IRQ pendiente
-#define IIR 2
-
-#define ReadReg(reg) (*(Reg(reg)))
-#define WriteReg(reg, v) (*(Reg(reg)) = (v))
+#define SCR 7                 // Scratch Register (libre uso)
 
 // the transmit output buffer.
 struct spinlock uart_tx_lock;
@@ -59,17 +72,43 @@ extern volatile int panicked; // from printf.c
 
 void uartstart();
 
+// -----------------------------
+// Probar stride (1 vs 4) usando SCR.
+// Devuelve 1 si OK con stride dado, 0 si no.
+static int uart_try_stride(int stride)
+{
+  uart_stride = stride;
+
+  unsigned char old_lcr = ReadReg(LCR);
+  unsigned char old_scr = ReadReg(SCR);
+
+  WriteReg(SCR, 0x5A);
+  unsigned char v1 = ReadReg(SCR);
+  WriteReg(SCR, 0xA5);
+  unsigned char v2 = ReadReg(SCR);
+
+  WriteReg(SCR, old_scr);
+  WriteReg(LCR, old_lcr);
+
+  return (v1 == 0x5A && v2 == 0xA5);
+}
+
 void
 uartinit(void)
 {
+  // Detecta stride: primero 4, si no sirve intenta 1.
+  if (!uart_try_stride(4)) {
+    if (!uart_try_stride(1)) {
+      uart_stride = 4; // peor caso, deja 4
+    }
+  }
+
   // deshabilita IRQs de momento
   WriteReg(IER, 0x00);
 
   // entra en modo divisor (latch) y programa baud (lo que ya tengas)
-  WriteReg(LCR, LCR_BAUD_LATCH);
-  WriteReg(0, 0x03);   // DLL (ajusta si lo necesitas)
-  WriteReg(1, 0x00);   // DLM
-  WriteReg(LCR, LCR_EIGHT_BITS);   // 8N1
+  // *** mejor no tocar divisor si el bootloader ya lo dejó bien ***
+  WriteReg(LCR, LCR_EIGHT_BITS);   // 8N1, DLAB=0
 
   // FIFO enable + clear
   WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
@@ -77,10 +116,16 @@ uartinit(void)
   // **CLAVE**: Levanta DTR/RTS y OUT2
   WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
 
-  // habilita RX (y TX) por si usas IRQ luego
-  WriteReg(IER, IER_RX_ENABLE | IER_TX_ENABLE);
+  // habilita RX (solo) por IRQ
+  WriteReg(IER, IER_RX_ENABLE);
 
   initlock(&uart_tx_lock, "uart");
+
+  // Diagnóstico
+  unsigned char iir = ReadReg(IIR);
+  unsigned char lsr = ReadReg(LSR);
+  unsigned char ier = ReadReg(IER);
+  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n", uart_stride, iir, lsr, ier);
 }
 
 // add a character to the output buffer and tell the
@@ -127,7 +172,7 @@ uartputc_sync(int c)
   // wait for Transmit Holding Empty to be set in LSR.
   while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
     ;
-  WriteReg(THR, c);
+  WriteReg(THR, (unsigned char)c);
 
   pop_off();
 }
@@ -142,7 +187,7 @@ uartstart()
   while(1){
     if(uart_tx_w == uart_tx_r){
       // transmit buffer is empty.
-      ReadReg(ISR);
+      (void)ReadReg(IIR);
       return;
     }
     
@@ -159,7 +204,7 @@ uartstart()
     // maybe uartputc() is waiting for space in the buffer.
     wakeup(&uart_tx_r);
     
-    WriteReg(THR, c);
+    WriteReg(THR, (unsigned char)c);
   }
 }
 
@@ -168,7 +213,7 @@ uartstart()
 int
 uartgetc(void)
 {
-  if(ReadReg(LSR) & 0x01){
+  if(ReadReg(LSR) & LSR_RX_READY){
     // input data is ready.
     return ReadReg(RHR);
   } else {
@@ -182,11 +227,10 @@ uartgetc(void)
 void
 uartintr(void)
 {
-   // --- DEBUG: imprime motivo del IRQ ---
-  unsigned char iir = ReadReg(IIR) & 0xff;
-  unsigned char lsr = ReadReg(LSR) & 0xff;
+  // --- DEBUG: imprime motivo del IRQ ---
+  unsigned char iir = ReadReg(IIR);
+  unsigned char lsr = ReadReg(LSR);
   printf("UART IRQ: IIR=0x%x LSR=0x%x\n", iir, lsr);
-
 
   // read and process incoming characters.
   while(1){
@@ -246,10 +290,10 @@ int uart_selftest(void)
 
   // Espera a que aparezca en RHR
   for (volatile int i = 0; i < 1000000; i++) {
-    unsigned char lsr = ReadReg(LSR);
-    if (lsr & LSR_RX_READY) {
+    unsigned char lsr2 = ReadReg(LSR);
+    if (lsr2 & LSR_RX_READY) {
       int c = ReadReg(RHR);
-      printf("UART selftest: LSR=0x%02x, RHR=0x%02x\r\n", lsr, c);
+      printf("UART selftest: LSR=0x%x, RHR=0x%x\n", lsr2, c);
       if (c == 0x55) ok = 0;
       break;
     }
@@ -262,6 +306,6 @@ int uart_selftest(void)
   WriteReg(LCR, lcr);
 
   if (ok != 0)
-    printf("UART selftest: FALLÓ (no se leyó eco en loopback)\r\n");
+    printf("UART selftest: FALLÓ (no se leyó eco en loopback)\n");
   return ok;
 }

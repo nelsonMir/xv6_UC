@@ -216,6 +216,9 @@ clockintr()
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
+
+      // --- TEMP: escanea RX por polling para que la consola responda
+    uart_debug_poll();
   }
 
   // ask for the next timer interrupt. this also clears
@@ -230,36 +233,32 @@ clockintr()
 // 1 if other device,
 // 0 if not recognized.
 int
-devintr()
+devintr(void)
 {
   uint64 scause = r_scause();
 
-  // External interrupt via PLIC
-  if(scause == 0x8000000000000009L){
+  if((scause & 0x8000000000000000L) &&
+     (scause & 0xff) == 9){
+    // interrupción externa (PLIC)
     int irq = plic_claim();
-    if(irq == UART0_IRQ){
-      uartintr();                 // RX/TX desde UART
-    } else if(irq == VIRTIO0_IRQ){
-      virtio_disk_intr();
-    } else if(irq){
-      // DEBUG: ver qué IRQ llega realmente (por si UART0_IRQ es distinto)
-      printf("devintr: unexpected irq=%d\n", irq);
-    }
-    if(irq)
+    if(irq){
+      printf("PLIC claim id=%d\n", irq);  // <--- DEBUG
+      if(irq == UART0_IRQ){
+        uartintr();
+      } else if(irq == VIRTIO0_IRQ) {
+        virtio_disk_intr();
+      } else {
+        printf("unexpected PLIC irq %d\n", irq);
+      }
       plic_complete(irq);
-    return 1;
-  }
-
-  // Software timer interrupt (xv6 usa esta ruta para el “tick”)
-  if(scause == 0x8000000000000001L){
+      return 1;
+    }
+    return 0;
+  } else if(scause == 0x8000000000000001L){
+    // timer
     clockintr();
-    // --- Fallback: POLLING UART cada tick ---
-    uartintr();                   // ← hace lectura de DR si hay datos, sin IRQ
-    // ---------------------------------------
-    uart_debug_poll();   // sonda adicional
     return 2;
+  } else {
+    return 0;
   }
-
-  return 0;
 }
-
