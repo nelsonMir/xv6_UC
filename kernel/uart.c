@@ -75,7 +75,7 @@ void uartstart();
 // -----------------------------
 // Probar stride (1 vs 4) usando SCR.
 // Devuelve 1 si OK con stride dado, 0 si no.
-static int uart_try_stride(int stride)
+static int __attribute__((unused)) uart_try_stride(int stride)
 {
   uart_stride = stride;
 
@@ -93,40 +93,38 @@ static int uart_try_stride(int stride)
   return (v1 == 0x5A && v2 == 0xA5);
 }
 
+
+// Trae arriba el 16550 y deja la UART lista para RX por IRQ y TX por polling.
+// Mantiene tu enfoque (stride dinámico + FIFO OFF mientras depuras).
 void
 uartinit(void)
 {
-  // Detecta stride: primero 4, si no sirve intenta 1.
+  // 1) Detecta stride: intenta 4, si no 1.
   if (!uart_try_stride(4)) {
     if (!uart_try_stride(1)) {
-      uart_stride = 4; // peor caso, deja 4
+      printf("UART: no se pudo detectar stride (1/4)\r\n");
     }
   }
 
-  // deshabilita IRQs de momento
-  WriteReg(IER, 0x00);
+  // 2) Config básica: 8N1, FIFO off (temporal), líneas de módem y OUT2.
+  WriteReg(LCR, LCR_EIGHT_BITS);
+  WriteReg(FCR, 0x00);                           // FIFO off (más simple depurar)
+  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);   // OUT2 habilita routing de IRQ
 
-  // entra en modo divisor (latch) y programa baud (lo que ya tengas)
-  // *** mejor no tocar divisor si el bootloader ya lo dejó bien ***
-  WriteReg(LCR, LCR_EIGHT_BITS);   // 8N1, DLAB=0
-
-  // FIFO enable + clear
-  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
-
-  // **CLAVE**: Levanta DTR/RTS y OUT2
-  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
-
-  // habilita RX (solo) por IRQ
+  // 3) Habilita SOLO RX por IRQ (TX lo haces por uartstart()/polling).
   WriteReg(IER, IER_RX_ENABLE);
 
+  // 4) Init del spinlock y punteros de buffer TX
   initlock(&uart_tx_lock, "uart");
+  uart_tx_w = uart_tx_r = 0;
 
-  // Diagnóstico
-  unsigned char iir = ReadReg(IIR);
-  unsigned char lsr = ReadReg(LSR);
-  unsigned char ier = ReadReg(IER);
-  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n", uart_stride, iir, lsr, ier);
+  // 5) Debug rápido para verificar acceso a registros
+  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\r\n",
+       uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
+
 }
+
+
 
 // add a character to the output buffer and tell the
 // UART to start sending if it isn't already.
@@ -227,24 +225,52 @@ uartgetc(void)
 void
 uartintr(void)
 {
-  // --- DEBUG: imprime motivo del IRQ ---
-  unsigned char iir = ReadReg(IIR);
-  unsigned char lsr = ReadReg(LSR);
-  printf("UART IRQ: IIR=0x%x LSR=0x%x\n", iir, lsr);
+  printf("UART IRQ top: IIR=0x%x LSR=0x%x\r\n", (int)ReadReg(IIR), (int)ReadReg(LSR));
 
-  // read and process incoming characters.
-  while(1){
-    int c = uartgetc();
-    if(c == -1)
-      break;
+  // --- DEBUG: imprime el estado al entrar al IRQ
+  unsigned char iir  = ReadReg(IIR);
+  unsigned char lsr0 = ReadReg(LSR);
+  printf("UART IRQ: IIR=0x%x LSR=0x%x\r\n", (int)iir, (int)lsr0);
+
+
+  // bit0 = 1 => no hay IRQ pendiente (espurio)
+  if (iir & 1)
+    return;
+
+  // RX: vacía todo lo disponible
+  while (ReadReg(LSR) & LSR_RX_READY) {
+    int c = ReadReg(RHR);
     consoleintr(c);
   }
 
-  // send buffered characters.
+  // TX: empuja más si hay
   acquire(&uart_tx_lock);
   uartstart();
   release(&uart_tx_lock);
 }
+
+
+// --- helper visible desde otros módulos ---
+int uart_rx_ready(void) {
+  return (ReadReg(LSR) & LSR_RX_READY) != 0;
+}
+
+// Habilita IRQ RX/ líneas de módem/8N1 en tiempo de ejecución (sin uartinit()).
+void uart_enable_irq_runtime(void)
+{
+  // 8N1
+  WriteReg(LCR, LCR_EIGHT_BITS);
+
+  // Levanta DTR/RTS y OUT2 (OUT2 suele rutear IRQ del 16550)
+  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
+
+  // Para depurar, desactiva FIFO (evita rarezas mientras ajustamos)
+  WriteReg(FCR, 0x00);
+
+  // Habilita interrupción por RX (opcionalmente también TX)
+  WriteReg(IER, IER_RX_ENABLE /* | IER_TX_ENABLE */);
+}
+
 
 //------------------------------
 //mas funciones de debug para hacer un eco en cruso + sonda LSR (para ver si llega algo al UART)
@@ -279,8 +305,9 @@ int uart_selftest(void)
   int ok = -1;
 
   // Silencia IRQs y limpia FIFOs
-  WriteReg(IER, 0x00);
-  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);
+  // FIFO off temporalmente (simplifica mientras depuramos)
+  WriteReg(FCR, 0x00);
+
 
   // Activa loopback y levanta líneas de módem
   WriteReg(MCR, (mcr | MCR_LOOP | MCR_DTR | MCR_RTS | MCR_OUT2));

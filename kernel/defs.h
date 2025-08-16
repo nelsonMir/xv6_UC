@@ -156,6 +156,14 @@ void            uartputc_sync(int);
 int             uartgetc(void);
 void            uart_debug_poll(void); //debuggeo
 int             uart_selftest(void); //debuggeo
+int             uart_rx_ready(void); //DEBUGGEO
+void        uartintr(void);
+void            uartstart(void);
+int             uart_rx_ready(void);
+void uart_debug_poll(void);
+void uart_enable_irq_runtime(void);
+
+
 
 // vm.c
 void            kvminit(void);

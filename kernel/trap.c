@@ -237,28 +237,37 @@ devintr(void)
 {
   uint64 scause = r_scause();
 
-  if((scause & 0x8000000000000000L) &&
-     (scause & 0xff) == 9){
-    // interrupción externa (PLIC)
+  if ((scause & 0x8000000000000000L) && ((scause & 0xff) == 9)) {
+    // Interrupción externa (vía PLIC)
     int irq = plic_claim();
-    if(irq){
-      printf("PLIC claim id=%d\n", irq);  // <--- DEBUG
-      if(irq == UART0_IRQ){
+    if (irq) {
+      printf("PLIC claim id=%d\n", irq);
+
+      if (irq == UART0_IRQ) {
         uartintr();
-      } else if(irq == VIRTIO0_IRQ) {
+      } else if (irq == VIRTIO0_IRQ) {
         virtio_disk_intr();
+      } else if (uart_rx_ready()) {
+        // Heurística: si hay RX listo ¡es el UART!
+        printf("IRQ %d tiene RX_READY=1; lo trato como UART.\n", irq);
+        uartintr();
       } else {
         printf("unexpected PLIC irq %d\n", irq);
       }
+
       plic_complete(irq);
       return 1;
     }
     return 0;
-  } else if(scause == 0x8000000000000001L){
-    // timer
+
+  } else if (scause == 0x8000000000000001L) {
+    // Timer
     clockintr();
     return 2;
+
   } else {
     return 0;
   }
 }
+
+
