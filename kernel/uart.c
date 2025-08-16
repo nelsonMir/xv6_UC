@@ -1,338 +1,217 @@
-//
-// low-level driver routines for 16550a UART.
-//
+// kernel/uart.c — UART DW8250 (JH7110) con fallback a OpenSBI (RX por defecto)
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
 #include "riscv.h"
-#include "spinlock.h"
-#include "proc.h"
 #include "defs.h"
+#include "spinlock.h"
 
-// the UART control registers are memory-mapped
-// at address UART0. this macro returns the
-// address of one of the registers.
-//
-// *** Acceso MMIO via helpers con stride dinámico (1 u 4) y acceso 32-bit. ***
-static int uart_stride = 4; // probamos en uartinit() y ajustamos
+// 16550 / DW APB UART registers (índices), con reg-shift=2 => stride=4
+#define RHR   0   // Receive Holding Reg     (DLAB=0, read)
+#define THR   0   // Transmit Holding Reg    (DLAB=0, write)
+#define IER   1   // Interrupt Enable        (DLAB=0)
+#define FCR   2   // FIFO Control            (write)
+#define IIR   2   // Interrupt ID            (read)
+#define LCR   3   // Line Control
+#define MCR   4   // Modem Control
+#define LSR   5   // Line Status
+#define MSR   6   // Modem Status
+#define SCR   7   // Scratch
+#define DLL   0   // Divisor Latch Low       (DLAB=1)
+#define DLM   1   // Divisor Latch High      (DLAB=1)
+#define USR  31   // DW8250: UART Status Register (offset 0x1f)
 
-static inline volatile uint32 *uart_reg_ptr32(int reg)
-{
-  return (volatile uint32 *)(UART0 + (uart_stride * reg));
-}
+#define IER_RX_ENABLE  0x01
+#define IER_TX_ENABLE  0x02
 
-static inline unsigned char ReadReg(int reg)
-{
-  return (unsigned char)(*uart_reg_ptr32(reg) & 0xFF);
-}
+#define FCR_FIFO_ENABLE 0x01
+#define FCR_CLEAR_RCVR  0x02
+#define FCR_CLEAR_XMIT  0x04
 
-static inline void WriteReg(int reg, unsigned char v)
-{
-  *uart_reg_ptr32(reg) = (uint32)v;
-}
+#define LCR_EIGHT_BITS  0x03
+#define LCR_BAUD_LATCH  0x80
 
+#define MCR_DTR  0x01
+#define MCR_RTS  0x02
+#define MCR_OUT2 0x08
 
-// the UART control registers.
-// some have different meanings for
-// read vs write.
-// see http://byterunner.com/16550.html
-#define RHR 0                 // receive holding register (for input bytes)
-#define THR 0                 // transmit holding register (for output bytes)
-#define IER 1                 // interrupt enable register
-#define IER_RX_ENABLE (1<<0)
-#define IER_TX_ENABLE (1<<1)
-#define FCR 2                 // FIFO control register
-#define FCR_FIFO_ENABLE (1<<0)
-#define FCR_FIFO_CLEAR (3<<1) // clear the content of the two FIFOs
-#define ISR 2                 // interrupt status register
-#define LCR 3                 // line control register
-#define LCR_EIGHT_BITS (3<<0)
-#define LCR_BAUD_LATCH (1<<7) // special mode to set baud rate
-#define MCR 4                 // Modem Control Register
-#define MCR_DTR   0x01        // Data Terminal Ready
-#define MCR_RTS   0x02        // Request To Send
-#define MCR_OUT2  0x08        // Habilita routing de IRQ en muchos 16550
-#define MCR_LOOP  0x10        // loopback interno
-#define LSR 5                 // line status register
-#define LSR_RX_READY (1<<0)   // input is waiting to be read from RHR
-#define LSR_TX_IDLE (1<<5)    // THR can accept another character to send
-//para que la consola responda agrego unas macros
-#define IIR 2                 // Interrupt Identification Register
-#define IIR_NOPEND 0x01       // bit0=1 => no hay IRQ pendiente
-#define SCR 7                 // Scratch Register (libre uso)
+#define LSR_RX_READY 0x01
+#define LSR_TX_IDLE  0x20
 
-// the transmit output buffer.
-struct spinlock uart_tx_lock;
+// IIR
+#define IIR_NO_INT    0x01
+#define IIR_IID(iir)  ((iir) & 0x0F)   // Busy Detect = 0x7 en DW8250
+
+// TX buffer (como xv6)
 #define UART_TX_BUF_SIZE 32
-char uart_tx_buf[UART_TX_BUF_SIZE];
-uint64 uart_tx_w; // write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
-uint64 uart_tx_r; // read next from uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE]
+struct {
+  struct spinlock lock;
+  char buf[UART_TX_BUF_SIZE];
+  uint w;
+  uint r;
+} uart_tx;
 
-extern volatile int panicked; // from printf.c
+static volatile unsigned char *uart_base = (volatile unsigned char*)UART0;
+static int stride = 1;                 // 1 u 4
+static unsigned char cached_lcr = LCR_EIGHT_BITS;
+static int uart_inited = 0;
 
-void uartstart();
+// ------------ OpenSBI (LEGACY) fallback -------------
+static inline long sbi_call(long eid, long a0, long a1, long a2) {
+  register long A0 asm("a0") = a0;
+  register long A1 asm("a1") = a1;
+  register long A2 asm("a2") = a2;
+  register long A7 asm("a7") = eid;
+  asm volatile("ecall" : "+r"(A0) : "r"(A1), "r"(A2), "r"(A7) : "memory");
+  return A0;
+}
+static inline void sbi_putchar(int ch) { sbi_call(0x01, ch & 0xff, 0, 0); }
+static inline int  sbi_getchar(void)   { return (int)sbi_call(0x02, 0, 0, 0); } // -1 si no hay
 
-// -----------------------------
-// Probar stride (1 vs 4) usando SCR.
-// Devuelve 1 si OK con stride dado, 0 si no.
-static int __attribute__((unused)) uart_try_stride(int stride)
-{
-  uart_stride = stride;
-
-  unsigned char old_lcr = ReadReg(LCR);
-  unsigned char old_scr = ReadReg(SCR);
-
+// ------------ helpers MMIO -------------
+static inline unsigned char ReadReg(int idx) {
+  return uart_base[idx * stride];
+}
+static inline void WriteReg(int idx, unsigned char v) {
+  uart_base[idx * stride] = v;
+}
+static inline void dw_wait_not_busy(void) {
+  for (int i = 0; i < 100000; i++) {
+    if ((ReadReg(USR) & 0x01) == 0) return;
+  }
+}
+static inline void set_lcr(unsigned char v) {
+  dw_wait_not_busy();
+  cached_lcr = v;
+  WriteReg(LCR, v);
+}
+static int uart_try_stride(int s) {
+  stride = s;
+  unsigned char old = ReadReg(SCR);
   WriteReg(SCR, 0x5A);
-  unsigned char v1 = ReadReg(SCR);
-  WriteReg(SCR, 0xA5);
-  unsigned char v2 = ReadReg(SCR);
-
-  WriteReg(SCR, old_scr);
-  WriteReg(LCR, old_lcr);
-
-  return (v1 == 0x5A && v2 == 0xA5);
+  unsigned char ok = ReadReg(SCR);
+  WriteReg(SCR, old);
+  return ok == 0x5A;
 }
 
-
-// Trae arriba el 16550 y deja la UART lista para RX por IRQ y TX por polling.
-// Mantiene tu enfoque (stride dinámico + FIFO OFF mientras depuras).
+// ------------ API -------------
 void
 uartinit(void)
 {
-  // 1) Detecta stride: intenta 4, si no 1.
+  initlock(&uart_tx.lock, "uart");
+
+  // Detecta stride 4 (reg-shift=2) o 1
   if (!uart_try_stride(4)) {
-    if (!uart_try_stride(1)) {
-      printf("UART: no se pudo detectar stride (1/4)\r\n");
-    }
+    uart_try_stride(1);
   }
 
-  // 2) Config básica: 8N1, FIFO off (temporal), líneas de módem y OUT2.
-  WriteReg(LCR, LCR_EIGHT_BITS);
-  WriteReg(FCR, 0x00);                           // FIFO off (más simple depurar)
-  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);   // OUT2 habilita routing de IRQ
+  // Deshabilita IRQs mientras se configura
+  WriteReg(IER, 0x00);
 
-  // 3) Habilita SOLO RX por IRQ (TX lo haces por uartstart()/polling).
+  // 8N1 (no tocamos divisor; asumimos baud del firmware)
+  set_lcr(LCR_EIGHT_BITS);
+
+  // FIFO on y limpia
+  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_CLEAR_RCVR | FCR_CLEAR_XMIT);
+
+  // Levanta DTR/RTS y OUT2 (ruta IRQ)
+  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
+
+  // Habilita SOLO RX por IRQ (evita ruido de THRE mientras afinamos)
   WriteReg(IER, IER_RX_ENABLE);
 
-  // 4) Init del spinlock y punteros de buffer TX
-  initlock(&uart_tx_lock, "uart");
-  uart_tx_w = uart_tx_r = 0;
-
-  // 5) Debug rápido para verificar acceso a registros
-  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\r\n",
-       uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
-
+  uart_inited = 1;
 }
 
-
-
-// add a character to the output buffer and tell the
-// UART to start sending if it isn't already.
-// blocks if the output buffer is full.
-// because it may block, it can't be called
-// from interrupts; it's only suitable for use
-// by write().
-void
-uartputc(int c)
+static void
+uartputc_sub(int c)
 {
-  acquire(&uart_tx_lock);
-
-  if(panicked){
-    for(;;)
-      ;
+  // Espera a que TX esté libre por MMIO; si no, usa OpenSBI
+  for (int i = 0; i < 100000; i++) {
+    if (ReadReg(LSR) & LSR_TX_IDLE) {
+      WriteReg(THR, c & 0xFF);
+      return;
+    }
   }
-  while(uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE){
-    // buffer is full.
-    // wait for uartstart() to open up space in the buffer.
-    sleep(&uart_tx_r, &uart_tx_lock);
-  }
-  uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = c;
-  uart_tx_w += 1;
-  uartstart();
-  release(&uart_tx_lock);
+  sbi_putchar(c);
 }
 
-
-// alternate version of uartputc() that doesn't 
-// use interrupts, for use by kernel printf() and
-// to echo characters. it spins waiting for the uart's
-// output register to be empty.
 void
 uartputc_sync(int c)
 {
-  push_off();
-
-  if(panicked){
-    for(;;)
-      ;
+  if (!uart_inited) {
+    sbi_putchar(c);
+    return;
   }
-
-  // wait for Transmit Holding Empty to be set in LSR.
-  while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
-    ;
-  WriteReg(THR, (unsigned char)c);
-
-  pop_off();
+  if (c == '\n')
+    uartputc_sub('\r');
+  uartputc_sub(c);
 }
 
-// if the UART is idle, and a character is waiting
-// in the transmit buffer, send it.
-// caller must hold uart_tx_lock.
-// called from both the top- and bottom-half.
 void
-uartstart()
+uartputc(int c)
 {
-  while(1){
-    if(uart_tx_w == uart_tx_r){
-      // transmit buffer is empty.
-      (void)ReadReg(IIR);
-      return;
-    }
-    
-    if((ReadReg(LSR) & LSR_TX_IDLE) == 0){
-      // the UART transmit holding register is full,
-      // so we cannot give it another byte.
-      // it will interrupt when it's ready for a new byte.
-      return;
-    }
-    
-    int c = uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE];
-    uart_tx_r += 1;
-    
-    // maybe uartputc() is waiting for space in the buffer.
-    wakeup(&uart_tx_r);
-    
-    WriteReg(THR, (unsigned char)c);
-  }
+  // en esta versión, transmitimos síncrono también para robustez
+  uartputc_sync(c);
 }
 
-// read one input character from the UART.
-// return -1 if none is waiting.
+// no la marques static: coincide con defs.h
+void
+uartstart(void)
+{
+  // aquí ya usamos salida síncrona; nada que hacer
+}
+
+// Devuelve byte 0..255 o -1 si no hay
 int
 uartgetc(void)
 {
-  if(ReadReg(LSR) & LSR_RX_READY){
-    // input data is ready.
+  // PRIMERO intenta OpenSBI (así garantizamos RX aunque el MMIO no llegue)
+  int ch = sbi_getchar();
+  if (ch >= 0)
+    return ch;
+
+  // Si no hay por OpenSBI, intenta MMIO (por si ya afinas PLIC/8250)
+  if (uart_inited && (ReadReg(LSR) & LSR_RX_READY))
     return ReadReg(RHR);
-  } else {
-    return -1;
-  }
+
+  return -1;
 }
 
-// handle a uart interrupt, raised because input has
-// arrived, or the uart is ready for more output, or
-// both. called from devintr().
+// ISR de UART (con busy-detect DW8250)
 void
 uartintr(void)
 {
-  printf("UART IRQ top: IIR=0x%x LSR=0x%x\r\n", (int)ReadReg(IIR), (int)ReadReg(LSR));
+  unsigned char iir = ReadReg(IIR);
 
-  // --- DEBUG: imprime el estado al entrar al IRQ
-  unsigned char iir  = ReadReg(IIR);
-  unsigned char lsr0 = ReadReg(LSR);
-  printf("UART IRQ: IIR=0x%x LSR=0x%x\r\n", (int)iir, (int)lsr0);
-
-
-  // bit0 = 1 => no hay IRQ pendiente (espurio)
-  if (iir & 1)
+  // Si no hay IRQ pendiente, salir
+  if (iir & IIR_NO_INT)
     return;
 
-  // RX: vacía todo lo disponible
-  while (ReadReg(LSR) & LSR_RX_READY) {
+  unsigned char iid = IIR_IID(iir);
+
+  // Busy-detect: limpia y reescribe LCR
+  if (iid == 0x07) {
+    (void)ReadReg(USR);
+    WriteReg(LCR, cached_lcr);
+    return;
+  }
+
+  // Recibir todo lo disponible por MMIO
+  for (;;) {
+    if ((ReadReg(LSR) & LSR_RX_READY) == 0)
+      break;
     int c = ReadReg(RHR);
     consoleintr(c);
   }
 
-  // TX: empuja más si hay
-  acquire(&uart_tx_lock);
-  uartstart();
-  release(&uart_tx_lock);
+  // TX: en esta versión, usamos síncrono fuera de la ISR
 }
 
-
-// --- helper visible desde otros módulos ---
-int uart_rx_ready(void) {
-  return (ReadReg(LSR) & LSR_RX_READY) != 0;
-}
-
-// Habilita IRQ RX/ líneas de módem/8N1 en tiempo de ejecución (sin uartinit()).
-void uart_enable_irq_runtime(void)
+void
+uart_debug_poll(void)
 {
-  // 8N1
-  WriteReg(LCR, LCR_EIGHT_BITS);
-
-  // Levanta DTR/RTS y OUT2 (OUT2 suele rutear IRQ del 16550)
-  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
-
-  // Para depurar, desactiva FIFO (evita rarezas mientras ajustamos)
-  WriteReg(FCR, 0x00);
-
-  // Habilita interrupción por RX (opcionalmente también TX)
-  WriteReg(IER, IER_RX_ENABLE /* | IER_TX_ENABLE */);
-}
-
-
-//------------------------------
-//mas funciones de debug para hacer un eco en cruso + sonda LSR (para ver si llega algo al UART)
-static inline int uart_kbhit(void){
-  return (ReadReg(LSR) & LSR_RX_READY) != 0;
-}
-
-static inline int uart_getc_nb(void){
-  if(uart_kbhit()) return ReadReg(RHR);
-  return -1;
-}
-
-void uart_debug_poll(void){
-  for (int i = 0; i < 16; i++){
-    int c = uart_getc_nb();
-    if (c < 0) break;
-    // eco "duro" por hardware, para que veas tu tecla
-    if (c == '\r') uartputc_sync('\n');
-    uartputc_sync(c);
-    // y además entrégalo al subsistema de consola/xv6
-    consoleintr(c);
-  }
-}
-
-// Devuelve 0 si pasó (recibió lo enviado), -1 si falló.
-int uart_selftest(void)
-{
-  unsigned char lcr = ReadReg(LCR);
-  unsigned char mcr = ReadReg(MCR);
-  unsigned char ier = ReadReg(IER);
-  unsigned char fcr = ReadReg(FCR);
-  int ok = -1;
-
-  // Silencia IRQs y limpia FIFOs
-  // FIFO off temporalmente (simplifica mientras depuramos)
-  WriteReg(FCR, 0x00);
-
-
-  // Activa loopback y levanta líneas de módem
-  WriteReg(MCR, (mcr | MCR_LOOP | MCR_DTR | MCR_RTS | MCR_OUT2));
-
-  // Envía un patrón con muchos flancos
-  WriteReg(THR, 0x55);
-
-  // Espera a que aparezca en RHR
-  for (volatile int i = 0; i < 1000000; i++) {
-    unsigned char lsr2 = ReadReg(LSR);
-    if (lsr2 & LSR_RX_READY) {
-      int c = ReadReg(RHR);
-      printf("UART selftest: LSR=0x%x, RHR=0x%x\n", lsr2, c);
-      if (c == 0x55) ok = 0;
-      break;
-    }
-  }
-
-  // Restaura estado previo
-  WriteReg(MCR, mcr);
-  WriteReg(IER, ier);
-  WriteReg(FCR, fcr);
-  WriteReg(LCR, lcr);
-
-  if (ok != 0)
-    printf("UART selftest: FALLÓ (no se leyó eco en loopback)\n");
-  return ok;
+  int ch = uartgetc();
+  if (ch >= 0)
+    uartputc_sync(ch);
 }

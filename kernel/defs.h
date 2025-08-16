@@ -21,6 +21,10 @@ void            bunpin(struct buf*);
 void            consoleinit(void);
 void            consoleintr(int);
 void            consputc(int);
+void            consoleinit(void);
+void            consoleintr(int);
+int             consoleread(int, uint64, int);
+int             consolewrite(int, uint64, int);
 
 // exec.c
 int             exec(char*, char**);
@@ -154,14 +158,16 @@ void            uartintr(void);
 void            uartputc(int);
 void            uartputc_sync(int);
 int             uartgetc(void);
-void            uart_debug_poll(void); //debuggeo
-int             uart_selftest(void); //debuggeo
-int             uart_rx_ready(void); //DEBUGGEO
-void        uartintr(void);
+void            uartinit(void);
+void            uartintr(void);
+void            uartputc(int);
+void            uartputc_sync(int);
+int             uartgetc(void);
 void            uartstart(void);
+void            uart_debug_poll(void);
+// --- NUEVOS helpers de diagnóstico RX ---
 int             uart_rx_ready(void);
-void uart_debug_poll(void);
-void uart_enable_irq_runtime(void);
+int             uart_debug_waitkey_ms(int ms);
 
 
 

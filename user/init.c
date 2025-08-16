@@ -1,54 +1,49 @@
-// init: The initial user-level program
-
+// init(1): crea/abre /console (mknod si falta) y lanza sh.\r
 #include "kernel/types.h"
 #include "kernel/stat.h"
-#include "kernel/spinlock.h"
-#include "kernel/sleeplock.h"
-#include "kernel/fs.h"
-#include "kernel/file.h"
 #include "user/user.h"
 #include "kernel/fcntl.h"
 
-char *argv[] = { "sh", 0 };
+static void
+open_console(void)
+{
+  // intenta abrir; si falla, crea el nodo de dispositivo y reintenta\r
+  int fd = open("console", O_RDWR);
+  if(fd < 0){
+    // mayor=1 (CONSOLE), menor=1 como en xv6\r
+    mknod("console", 1, 1);
+    fd = open("console", O_RDWR);
+  }
+  if(fd >= 0){
+    // duplica a stdin/stdout/stderr\r
+    if(fd != 0) dup(fd);
+    if(fd != 1) dup(fd);
+    if(fd != 2) dup(fd);
+  }
+}
 
 int
 main(void)
 {
-  int pid, wpid;
-
-  if(open("console", O_RDWR) < 0){
-    mknod("console", CONSOLE, 0);
-    open("console", O_RDWR);
-  }
-  dup(0);  // stdout
-  dup(0);  // stderr
+  open_console();
+  printf("init: starting sh\r\n");
 
   for(;;){
-    printf("init: starting sh\n");
-    pid = fork();
+    int pid = fork();
     if(pid < 0){
-      printf("init: fork failed\n");
+      printf("init: fork failed\r\n");
       exit(1);
     }
     if(pid == 0){
+      // hijo: ejecuta la shell\r
+      char *argv[] = { "sh", 0 };
       exec("sh", argv);
-      printf("init: exec sh failed\n");
+      printf("init: exec sh failed\r\n");
       exit(1);
     }
-
-    for(;;){
-      // this call to wait() returns if the shell exits,
-      // or if a parentless process exits.
-      wpid = wait((int *) 0);
-      if(wpid == pid){
-        // the shell exited; restart it.
-        break;
-      } else if(wpid < 0){
-        printf("init: wait returned an error\n");
-        exit(1);
-      } else {
-        // it was a parentless process; do nothing.
-      }
-    }
+    // padre: espera shell\r
+    int xstatus = 0;
+    wait(&xstatus);
+    printf("init: sh exited (status=%d)\r\n", xstatus);
   }
 }
