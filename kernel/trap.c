@@ -6,6 +6,16 @@
 #include "proc.h"
 #include "defs.h"
 
+//para depurar 
+// --- control de verbosidad de traps/PLIC ---
+#ifndef VERBOSE_TRAP
+#define VERBOSE_TRAP 0
+#endif
+
+#ifndef VERBOSE_PLIC
+#define VERBOSE_PLIC 0
+#endif
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -56,7 +66,9 @@ trapinithart(void)
 void
 usertrap(void)
 {
+  #if VERBOSE_TRAP
   printf("usertrap: scause=0x%lx sepc=0x%lx stval=0x%lx\r\n", r_scause(), r_sepc(), r_stval());
+#endif
 
   int which_dev = 0;
 
@@ -113,76 +125,24 @@ usertrapret(void)
 {
   struct proc *p = myproc();
 
-  // we're about to switch the destination of traps from
-  // kerneltrap() to usertrap(), so turn off interrupts until
-  // we're back in user space, where usertrap() is correct.
   intr_off();
 
-  // send syscalls, interrupts, and exceptions to uservec in trampoline.S
   uint64 trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
   w_stvec(trampoline_uservec);
 
-  // set up trapframe values that uservec will need when
-  // the process next traps into the kernel.
   p->trapframe->kernel_satp = r_satp();         // kernel page table
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
   p->trapframe->kernel_trap = (uint64)usertrap;
   p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
 
-  // set up the registers that trampoline.S's sret will use
-  // to get to user space.
-  
-  // set S Previous Privilege mode to User.
   unsigned long x = r_sstatus();
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
   x |= SSTATUS_SPIE; // enable interrupts in user mode
   w_sstatus(x);
 
-  // set S Exception Program Counter to the saved user pc.
   w_sepc(p->trapframe->epc);
 
-  // tell trampoline.S the user page table to switch to.
   uint64 satp = MAKE_SATP(p->pagetable);
-
-  ///DEBUG: imprime justo antes de saltar a userret (cambiar a modo usuario)
-printf("usertrapret: satp=0x%lx sepc=0x%lx sp=0x%lx pid=%d\r\n",
-       satp, p->trapframe->epc, p->trapframe->sp, p->pid);
-
-// TRAMPOLINE/TRAPFRAME: kernel pagetable
-uint64 pa_tramp = kvmpa(TRAMPOLINE);
-uint64 pa_tf    = kvmpa((uint64)p->trapframe);
-
-// USER: texto OK
-uint64 pa_text0 = walkaddr_reason(p->pagetable, 0);
-
-// USER: pila — evitar borde superior
-uint64 sp  = p->trapframe->sp;        // 0x2000
-uint64 sva = PGROUNDDOWN(sp - 1);     // 0x1000
-// Prueba explícita con la VA exacta de la página de pila
-uint64 pa_stack = walkaddr_reason(p->pagetable, sva);
-
-// (extra) chequeo directo a 0x1000 por si sva cambia
-uint64 pa_stack_1000 = walkaddr_reason(p->pagetable, PGSIZE);
-
-printf("mapchk: trampPA=0x%lx trapframePA=0x%lx text0PA=0x%lx stackPA=0x%lx (sva=0x%lx) stackPA@0x1000=0x%lx\r\n",
-       pa_tramp, pa_tf, pa_text0, pa_stack, sva, pa_stack_1000);
-
-  //mas prints de DEBUG 
-  pte_t *utrp = walk(p->pagetable, TRAMPOLINE, 0);
-pte_t *utf  = walk(p->pagetable, TRAPFRAME, 0);
-printf("user PTE TRAMP: %s pte=0x%lx [V=%d U=%d R=%d W=%d X=%d]\r\n",
-       utrp?"ok":"NULL", utrp?*utrp:0,
-       utrp?!!(*utrp&PTE_V):0, utrp?!!(*utrp&PTE_U):0,
-       utrp?!!(*utrp&PTE_R):0, utrp?!!(*utrp&PTE_W):0, utrp?!!(*utrp&PTE_X):0);
-printf("user PTE TF   : %s pte=0x%lx [V=%d U=%d R=%d W=%d X=%d]\r\n",
-       utf?"ok":"NULL", utf?*utf:0,
-       utf?!!(*utf&PTE_V):0, utf?!!(*utf&PTE_U):0,
-       utf?!!(*utf&PTE_R):0, utf?!!(*utf&PTE_W):0, utf?!!(*utf&PTE_X):0);
-
-
-  // jump to userret in trampoline.S at the top of memory, which 
-  // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
   uint64 trampoline_userret = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64))trampoline_userret)(satp);
 }
@@ -255,14 +215,18 @@ devintr(void)
     // Interrupción externa (vía PLIC)
     int irq = plic_claim();
     if (irq) {
+      #if VERBOSE_PLIC
       printf("PLIC claim id=%d\n", irq);
+      #endif
 
       if (irq == UART0_IRQ) {
         uartintr();
       } else if (irq == VIRTIO0_IRQ) {
         virtio_disk_intr();
       }  else {
+         #if VERBOSE_PLIC
          printf("unexpected PLIC irq %d\n", irq);
+         #endif
        }
 
       plic_complete(irq);

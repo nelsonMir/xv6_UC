@@ -7,6 +7,16 @@
 #include "syscall.h"
 #include "defs.h"
 
+//depuracion 
+// --- control de verbosidad de syscalls ---
+#ifndef SYSCALL_TRACE
+#define SYSCALL_TRACE 0   // pon 1 si quiero reactivar trazas
+#endif
+
+#ifndef SYSCALL_TRACE_FILTER_WRITE
+#define SYSCALL_TRACE_FILTER_WRITE 1 // deja 1 para NO trazar write()
+#endif
+
 // Fetch the uint64 at addr from the current process.
 int
 fetchaddr(uint64 addr, uint64 *ip)
@@ -148,8 +158,11 @@ syscall(void)
   int num = p->trapframe->a7;
 
   // Traza solo las llamadas clave para arranque
-  if (num == SYS_exec || num == SYS_open || num == SYS_read || num == SYS_write) {
-    printf("syscall: num=%d pid=%d (%s)\r\n", num, p->pid, p->name);
+  // --- syscalls verbose trace (filtrado) ---
+  if (SYSCALL_TRACE) {
+    if (!(SYSCALL_TRACE_FILTER_WRITE && num == SYS_write)) {
+      printf("syscall: num=%d pid=%d (%s)\r\n", num, p->pid, p->name);
+    }
   }
 
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {

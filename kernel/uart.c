@@ -58,7 +58,7 @@ static inline void WriteReg(int reg, unsigned char v) { *uart_reg_ptr8(reg) = v;
 
 // the transmit output buffer.
 struct spinlock uart_tx_lock;
-#define UART_TX_BUF_SIZE 32
+#define UART_TX_BUF_SIZE 256
 char uart_tx_buf[UART_TX_BUF_SIZE];
 uint64 uart_tx_w; // write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
 uint64 uart_tx_r; // read next from uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE]
@@ -158,8 +158,9 @@ uartinit(void)
   WriteReg(IER, 0x00);
 
   // 3) 8N1 y FIFO (OFF temporalmente para depurar RX claro y evitar rarezas)
-  WriteReg(LCR, LCR_EIGHT_BITS);    // DLAB=0, 8N1
-  WriteReg(FCR, 0x00);              // FIFO OFF (temporal mientras depuras)
+  WriteReg(LCR, LCR_EIGHT_BITS);                      // DLAB=0, 8N1
+  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);    // FIFO ON + clear
+
 
   // 4) OUT2 + DTR/RTS para ruteo de IRQ en 16550 compatibles
   WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
