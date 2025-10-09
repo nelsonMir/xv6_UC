@@ -62,6 +62,8 @@ struct spinlock uart_tx_lock;
 char uart_tx_buf[UART_TX_BUF_SIZE];
 uint64 uart_tx_w; // write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
 uint64 uart_tx_r; // read next from uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE]
+// --- CR/LF coalescing state (para evitar dobles saltos y "extras")
+static int crlf_state = 0;  // 0: normal, 1: último fue '\r', 2: último fue '\n'
 
 extern volatile int panicked; // from printf.c
 
@@ -154,46 +156,31 @@ uartinit(void)
 
   // 2) Deshabilita IRQs
   WriteReg(IER, 0x00);
-  // 3) Entra en baud latch y programa algo inofensivo
-  //No reprogramar baud. Sólo salimos del latch por si venía activo.
-  //WriteReg(LCR, LCR_BAUD_LATCH);  // DLAB=1
-  //WriteReg(0, 0x03);              // DLL
-  //WriteReg(1, 0x00);              // DLM
-  // 4) 8N1, FIFOs ON + clear
-  WriteReg(LCR, LCR_EIGHT_BITS);                    // DLAB=0
-  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);  // limpia FIFOs
-  // 5) OUT2 + líneas de módem
+
+  // 3) 8N1 y FIFO (OFF temporalmente para depurar RX claro y evitar rarezas)
+  WriteReg(LCR, LCR_EIGHT_BITS);    // DLAB=0, 8N1
+  WriteReg(FCR, 0x00);              // FIFO OFF (temporal mientras depuras)
+
+  // 4) OUT2 + DTR/RTS para ruteo de IRQ en 16550 compatibles
   WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
-  // Lee USR/LSR una vez para descartar posibles latencias del DW8250
+
+  // 5) Sanea estado
   (void)ReadReg(USR);
   (void)ReadReg(LSR);
   while (ReadReg(LSR) & LSR_RX_READY) (void)ReadReg(RHR);
-  // 6) SOLO RX por IRQ
-   WriteReg(IER, IER_RX_ENABLE);
 
-  // 4) Init del spinlock y punteros de buffer TX
+  // 6) Habilita IRQ de RX **y también TX**
+  WriteReg(IER, IER_RX_ENABLE | IER_TX_ENABLE);  // <- clave para que el TX avance
+
+  // 7) Init del spinlock y punteros de buffer TX
   initlock(&uart_tx_lock, "uart");
   uart_tx_w = uart_tx_r = 0;
 
-  // 7) Debug: comprueba que IER sea 0x01 tras configurar
+  // 8) Debug rápido
   printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n",
-       uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
-
-// Autodetecta el ID del PLIC para este UART y deja activado solo ese.
-/*int id = uart_probe_plic_id();
-if (id > 0) {
-  uart_irq_id = id;
-  printf("UART PLIC id detectado = %d\n", uart_irq_id);
-  plic_disable_all_first64_extern();
-  plic_enable_only_extern(uart_irq_id);
-} else {
-  printf("UART PLIC id: no detectado, usando valor por defecto %d\n", uart_irq_id);
-  plic_disable_all_first64_extern();
-  plic_enable_only_extern(uart_irq_id);
-}*/
-
-
+         uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
 }
+
 
 
 
@@ -295,30 +282,56 @@ int uartgetc(void)
 // both. called from devintr().
 void uartintr(void)
 {
-  unsigned char iir = ReadReg(IIR);
-  if (iir & 0x01) return;            // no hay IRQ pendiente
+  for (;;) {
+    unsigned char iir = ReadReg(IIR);
+    if (iir & IIR_NOPEND)
+      break;                              // no hay IRQ pendiente
 
-  // limpia rarezas DW si quieres, pero sin printf
-  if ((iir & 0x0E) == 0x06 || (iir & 0x0F) == 0x07) {
-    (void)ReadReg(USR);
-    (void)ReadReg(LSR);
-    if (ReadReg(LSR) & 0x01) (void)ReadReg(RHR);
-    //sin return: continúa a drenar RX
-    //return;
+    unsigned char cause = (iir >> 1) & 0x7;  // 16550: bits 3:1
+    switch (cause) {
+      case 0x3: // 0b011: Receiver Line Status (LSR)
+        (void)ReadReg(LSR);               // leer LSR limpia la causa
+        break;
+
+      case 0x2: // 0b010: Received Data Available
+      case 0x6: // 0b110: Character Timeout (si FIFO ON)
+        while (ReadReg(LSR) & LSR_RX_READY) {
+          int ch = ReadReg(RHR) & 0xff;
+
+          // --- CR/LF normalización + coalescing ---
+          if (ch == '\r' || ch == '\n') {
+            // si ya vimos el par opuesto justo antes, descarta este
+            if ((crlf_state == 1 && ch == '\n') ||
+                (crlf_state == 2 && ch == '\r')) {
+              crlf_state = 0;     // consumimos la pareja CRLF/LFCR
+              continue;           // descarta el duplicado
+            }
+            crlf_state = (ch == '\r') ? 1 : 2;
+            ch = '\n';            // normaliza a '\n'
+          } else {
+            crlf_state = 0;
+          }
+
+          consoleintr(ch);
+        }
+        break;
+
+      case 0x1: // 0b001: THR Empty (TX listo)
+        acquire(&uart_tx_lock);
+        uartstart();              // empuja más bytes del buffer TX
+        release(&uart_tx_lock);
+        break;
+
+      default:
+        // DW-apb-uart: limpia condiciones ruidosas
+        (void)ReadReg(USR);
+        (void)ReadReg(LSR);
+        if (ReadReg(LSR) & LSR_RX_READY) (void)ReadReg(RHR);
+        break;
+    }
   }
-
-  // RX: drenar todo
-  while (ReadReg(LSR) & LSR_RX_READY) {
-    int ch = ReadReg(RHR) & 0xff;
-    if (ch == '\r') ch = '\n';
-    consoleintr(ch);
-  }
-
-  // TX: empuja si procede
-  acquire(&uart_tx_lock);
-  uartstart();
-  release(&uart_tx_lock);
 }
+
 
 
 
