@@ -434,7 +434,9 @@ sys_chdir(void)
 uint64
 sys_exec(void)
 {
+  #if DBG_EXEC
   printf("sys_exec: comenzando\n"); 
+  #endif
 
   char path[MAXPATH], *argv[MAXARG];
   int i;

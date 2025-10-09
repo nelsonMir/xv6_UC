@@ -263,7 +263,9 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 void
 userinit(void)
 {
+  #if DBG_BOOT
   printf("userinit: creando proceso init\r\n");
+  #endif
   struct proc *p;
 
   p = allocproc();
@@ -271,7 +273,9 @@ userinit(void)
 
   extern unsigned int initcode_len;
   // extern char trampoline[];   // ← ya no es necesario aquí
+  #if DBG_BOOT
   printf("DEBUG initcode_len=%u\r\n", initcode_len);
+  #endif
 
   // *** OJO ***
   // No mapear TRAMPOLINE/TRAPFRAME aquí: parece que allocproc()/proc_pagetable()
@@ -310,11 +314,15 @@ userinit(void)
   if(stkpte == 0)
     panic("userinit: no hay PTE para la pila (0x1000)");
 
+  #if DBG_BOOT
   uint64 oldpte = *stkpte;
+  #endif
   *stkpte |= (PTE_U | PTE_R);   // Asegura U y R
   sfence_vma();                 // Asegura que la TLB vea el cambio
 
+  #if DBG_BOOT
   printf("DEBUG stack PTE old=0x%lx new=0x%lx\r\n", oldpte, *stkpte);
+  #endif
   // --- fin parche ---
 
   // SP al final de la segunda página
@@ -324,7 +332,9 @@ userinit(void)
   // uint64 spa = walkaddr(p->pagetable, p->trapframe->sp - 16);
   // printf("DEBUG stack walk: pa=0x%lx\r\n", spa);
 
+  #if DBG_BOOT
   printf("initcode cargado, epc=%ld sz=%ld\n", p->trapframe->epc, p->sz);
+  #endif
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");

@@ -103,13 +103,21 @@ bread(uint dev, uint blockno)
 
   b = bget(dev, blockno);
   if(!b->valid) {
-    if (blockno < 16)
+    if (blockno < 16){
+      #if DBG_BIO
       printf("bread: miss blk %u\r\n", blockno);
+      #endif
+    }
+      
     virtio_disk_rw(b, 0); // leer del ramdisk
     b->valid = 1;
   } else {
-    if (blockno < 16)
+    if (blockno < 16){
+      #if DBG_BIO
       printf("bread: hit blk %u\r\n", blockno);
+      #endif
+    }
+      
   }
   return b;
 }
@@ -121,8 +129,12 @@ bwrite(struct buf *b)
 {
   if(!holdingsleep(&b->lock))
     panic("bwrite");
-  if (b->blockno < 16)
+  if (b->blockno < 16){
+    #if DBG_BIO
     printf("bwrite: blk %u\r\n", b->blockno);
+    #endif
+  }
+    
   virtio_disk_rw(b, 1);
 }
 
@@ -140,7 +152,12 @@ brelse(struct buf *b)
   b->refcnt--;
   if (b->refcnt == 0) {
     if (b->blockno < 16)
+    {
+      #if DBG_BIO
       printf("brelse: blk %u\r\n", b->blockno);
+      #endif
+    }
+      
     // Nadie lo espera → poner en la lista MRU
     b->next->prev = b->prev;
     b->prev->next = b->next;

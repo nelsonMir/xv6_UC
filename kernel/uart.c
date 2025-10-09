@@ -197,19 +197,28 @@ uartputc(int c)
   acquire(&uart_tx_lock);
 
   if(panicked){
-    for(;;)
-      ;
+    for(;;) ;
   }
+
+  // si es '\n', encola primero '\r'
+  if(c == '\n'){
+    while(uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE){
+      sleep(&uart_tx_r, &uart_tx_lock);
+    }
+    uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = '\r';
+    uart_tx_w += 1;
+  }
+
   while(uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE){
-    // buffer is full.
-    // wait for uartstart() to open up space in the buffer.
     sleep(&uart_tx_r, &uart_tx_lock);
   }
   uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = c;
   uart_tx_w += 1;
+
   uartstart();
   release(&uart_tx_lock);
 }
+
 
 
 // alternate version of uartputc() that doesn't 
@@ -222,17 +231,23 @@ uartputc_sync(int c)
   push_off();
 
   if(panicked){
-    for(;;)
-      ;
+    for(;;) ;
   }
 
-  // wait for Transmit Holding Empty to be set in LSR.
+  // Si es '\n', primero manda '\r'
+  if(c == '\n'){
+    while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
+      ;
+    WriteReg(THR, '\r');
+  }
+
   while((ReadReg(LSR) & LSR_TX_IDLE) == 0)
     ;
   WriteReg(THR, (unsigned char)c);
 
   pop_off();
 }
+
 
 // if the UART is idle, and a character is waiting
 // in the transmit buffer, send it.

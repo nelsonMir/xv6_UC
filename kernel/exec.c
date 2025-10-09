@@ -25,7 +25,9 @@ int flags2perm(int flags)
 int
 exec(char *path, char **argv)
 {
+  #if DBG_EXEC
   printf("exec: intentando abrir %s\r\n", path);
+  #endif
 
   char *s, *last;
   int i, off;
@@ -48,8 +50,10 @@ exec(char *path, char **argv)
   // <<< LOG seguro sin acceder a ip->campos >>>
   struct stat st;
   stati(ip, &st);
+  #if DBG_EXEC
   printf("exec: namei OK ino=%d type=%d nlink=%d size=%ld\r\n",
          st.ino, st.type, st.nlink, st.size);
+  #endif
 
 
   // Check ELF header
@@ -63,7 +67,9 @@ exec(char *path, char **argv)
     goto bad;
   }
 
+  #if DBG_EXEC
    printf("exec: ELF ok, entry=0x%ld, phoff=%ld, phnum=%d\r\n", elf.entry, elf.phoff, elf.phnum);
+   #endif
 
   if((pagetable = proc_pagetable(p)) == 0) {
     printf("exec: fallo al crear pagetable\r\n");
@@ -91,8 +97,10 @@ exec(char *path, char **argv)
       goto bad;
     }
 
+    #if DBG_EXEC
     printf("exec: segmento %d → va=0x%ld, filesz=%ld, memsz=%ld, flags=0x%x, off=%ld\r\n",
            i, ph.vaddr, ph.filesz, ph.memsz, ph.flags, ph.off);
+    #endif
 
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, flags2perm(ph.flags))) == 0) {
@@ -106,11 +114,15 @@ exec(char *path, char **argv)
     }
   }
 
+  #if DBG_EXEC
   printf("exec: segmentos cargados, preparando pila...\r\n");
+  #endif
 
   iunlockput(ip);
   end_op();
+  #if DBG_EXEC
   printf("exec: success, epc=0x%lx sp=0x%lx\r\n", p->trapframe->epc, p->trapframe->sp);
+  #endif
   ip = 0;
 
   p = myproc();
@@ -180,8 +192,10 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  #if DBG_EXEC
   printf("exec: listo para saltar a usuario (epc=0x%ld sp=0x%ld argc=%ld)\r\n", p->trapframe->epc, sp, argc);
-
+  #endif 
+  
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:

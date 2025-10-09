@@ -62,8 +62,10 @@ initlog(int dev, struct superblock *sb)
   log.size = sb->nlog;
   log.dev = dev;
 
+  #if DBG_LOG
   printf("initlog: start=%u size=%u dev=%u\r\n",
          log.start, log.size, log.dev); // DEBUG
+  #endif
 
   recover_from_log();
 }
@@ -85,8 +87,10 @@ install_trans(int recovering)
     brelse(dbuf);
 
     // DEBUG: mostrar bloque copiado
+    #if DBG_LOG
     printf("install_trans: copy blk %u -> blk %u\r\n",
            log.start+tail+1, log.lh.block[tail]);
+    #endif
   }
 }
 
@@ -99,7 +103,9 @@ read_head(void)
   struct logheader *lh = (struct logheader *) (buf->data);
   int i;
 
+  #if DBG_LOG
   printf("read_head: n=%d\r\n", lh->n);  // DEBUG: ver número de bloques en log
+  #endif
 
   log.lh.n = lh->n;
   for (i = 0; i < log.lh.n; i++) {
@@ -119,7 +125,9 @@ write_head(void)
   struct logheader *hb = (struct logheader *) (buf->data);
   int i;
 
+  #if DBG_LOG
   printf("write_head: n=%d\r\n", log.lh.n);  // DEBUG: confirmar valor que se escribe
+  #endif
 
   hb->n = log.lh.n;
   for (i = 0; i < log.lh.n; i++) {
@@ -132,14 +140,18 @@ write_head(void)
 static void
 recover_from_log(void)
 {
+  #if DBG_LOG
   printf("recover_from_log: start\r\n"); // DEBUG
+  #endif
 
   read_head();
   install_trans(1);
   log.lh.n = 0;
   write_head();
 
+  #if DBG_LOG
   printf("recover_from_log: end\r\n"); // DEBUG
+  #endif
 }
 
 // called at the start of each FS system call.
@@ -151,17 +163,28 @@ begin_op(void)
   acquire(&log.lock);
   while(1){
     if(log.committing){
-      if (log.outstanding == 0)
+      if (log.outstanding == 0){
+        #if DBG_LOG
         printf("begin_op: committing (out=0)\r\n");
+        #endif
+      }
+
+        
       sleep(&log, &log.lock);
     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
       // Esta op podría agotar el log → esperar commit
+      #if DBG_LOG
       printf("begin_op: throttle (n=%d,out=%d)\r\n", log.lh.n, log.outstanding);
+      #endif
       sleep(&log, &log.lock);
     } else {
       log.outstanding += 1;
-      if (log.outstanding <= 4)
+      if (log.outstanding <= 4){
+        #if DBG_LOG
         printf("begin_op: out=%d\r\n", log.outstanding);
+        #endif
+      }
+        
       release(&log.lock);
       break;
     }
@@ -177,14 +200,24 @@ end_op(void)
 
   acquire(&log.lock);
   log.outstanding -= 1;
-  if (log.outstanding <= 4)
+  if (log.outstanding <= 4){
+    #if DBG_LOG
     printf("end_op: out=%d\r\n", log.outstanding);
-  if(log.committing)
+    #endif
+  }
+    
+  if(log.committing){
+    #if DBG_LOG
     panic("log.committing");
+    #endif
+  }
+    
   if(log.outstanding == 0){
     do_commit = 1;
     log.committing = 1;
+    #if DBG_LOG
     printf("commit: start\r\n");
+    #endif
   } else {
     // begin_op() puede estar esperando por espacio → despertarlo.
     wakeup(&log);
@@ -197,7 +230,9 @@ end_op(void)
     acquire(&log.lock);
     log.committing = 0;
     wakeup(&log);
+    #if DBG_LOG
     printf("commit: done\r\n");
+    #endif
     release(&log.lock);
   }
 }
@@ -222,13 +257,17 @@ static void
 commit()
 {
   if (log.lh.n > 0) {
+    #if DBG_LOG
     printf("commit: n=%d\r\n", log.lh.n); // DEBUG: inicio del commit
+    #endif
     write_log();     // Write modified blocks from cache to log
     write_head();    // Write header to disk -- the real commit
     install_trans(0); // Now install writes to home locations
     log.lh.n = 0;
     write_head();    // Erase the transaction from the log
+    #if DBG_LOG
     printf("commit: done\r\n"); // DEBUG: commit terminado
+    #endif
   }
 }
 

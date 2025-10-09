@@ -207,3 +207,31 @@ void            virtio_disk_intr(void);
 //schedulers.c
 int             schedule_round_robin(struct cpu *);
 int             schedule_fcfs(struct cpu *);
+
+//NUEVO
+//DEBUG
+// ===== DEBUG TOGGLES (apaga todo por defecto) =====
+#ifndef DBG_EXEC
+#define DBG_EXEC 0         // exec(): carga de ELF, saltos a user, etc.
+#endif
+#ifndef DBG_NAMEI
+#define DBG_NAMEI 0        // namei/nameiparent: búsquedas de rutas
+#endif
+#ifndef DBG_LOG
+#define DBG_LOG 0          // begin_op/end_op/commit/install_trans
+#endif
+#ifndef DBG_BIO
+#define DBG_BIO 0          // bread/bwrite/brelse
+#endif
+#ifndef DBG_RAMDISK
+#define DBG_RAMDISK 0      // ramdisk: read/write
+#endif
+#ifndef DBG_BOOT
+#define DBG_BOOT 0         // mensajes de arranque (userinit, kvminit, etc.)
+#endif
+#ifndef DBG_VM
+#define DBG_VM 0           // prints de vm/pagetable si los hubieras
+#endif
+#ifndef DBG_UART_SELFTEST
+#define DBG_UART_SELFTEST 0 // prueba loopback de UART al arrancar
+#endif

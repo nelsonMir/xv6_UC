@@ -30,16 +30,16 @@
 // called by printf(), and to echo input characters,
 // but not from write().
 //
+// console.c
+// console.c
 void
 consputc(int c)
 {
-  if(c == BACKSPACE){
-    // if the user typed backspace, overwrite with a space.
-    uartputc_sync('\b'); uartputc_sync(' '); uartputc_sync('\b');
-  } else {
-    uartputc_sync(c);
-  }
+  uartputc_sync(c);   // sin traducir; la traducción se hace en UART
 }
+
+
+
 
 struct {
   struct spinlock lock;
@@ -184,7 +184,9 @@ consoleinit(void)
   initlock(&cons.lock, "cons");
 
   uartinit();
+  #if DBG_UART_SELFTEST
   uart_selftest();  // <<< imprime lo que pasó
+  #endif
 
   // connect read and write system calls
   // to consoleread and consolewrite.

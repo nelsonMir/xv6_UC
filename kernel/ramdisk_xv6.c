@@ -45,13 +45,21 @@ virtio_disk_rw(struct buf *b, int write)
   if (write) {
     // (opcional) depurar escrituras tempranas
     // if (b->blockno < 8) printf("ramdisk: write blk %u\n", b->blockno);
-    if (b->blockno < 16) printf("ramdisk: write blk %u\r\n", b->blockno);
+    if (b->blockno < 16) {
+      #if DBG_RAMDISK
+      printf("ramdisk: write blk %u\r\n", b->blockno);
+      #endif
+    }
     // Escribir del buffer del kernel al “disco” (RAM)
     memmove(dst, b->data, BSIZE);
     // B_DIRTY lo gestiona log/bwrite; aquí no marcamos nada más.
   } else {
     // Depurar solo los primeros bloques para no inundar la consola
-     if (b->blockno < 16) printf("ramdisk: read blk %u\r\n", b->blockno);
+     if (b->blockno < 16) {
+      #if DBG_RAMDISK
+      printf("ramdisk: read blk %u\r\n", b->blockno);
+      #endif
+    }
 
     // Leer del “disco” al buffer
     memmove(b->data, dst, BSIZE);
