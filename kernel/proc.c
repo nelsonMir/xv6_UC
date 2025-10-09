@@ -539,10 +539,10 @@ scheduler(void)
   for(;;){
 
     // Sonda: recoge RX aunque no haya IRQs ni timer
-    uart_debug_poll();
+    //uart_debug_poll();
     // Fallback: intenta chupar del UART en cada iteración
     // (esto es barato; solo lee si hay LSR_RX_READY)
-    uartintr();
+    //uartintr();
 
     // The most recent process to run may have had interrupts
     // turned off; enable them to avoid a deadlock if all

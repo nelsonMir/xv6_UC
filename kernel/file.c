@@ -19,10 +19,16 @@ struct {
   struct file file[NFILE];
 } ftable;
 
+extern int  consoleread(int, uint64, int);
+extern int  consolewrite(int, uint64, int);
+#define DEV_CONSOLE 1  // major de consola
+
 void
 fileinit(void)
 {
   initlock(&ftable.lock, "ftable");
+  devsw[DEV_CONSOLE].read  = consoleread;   // DEV_CONSOLE == 1
+  devsw[DEV_CONSOLE].write = consolewrite;
 }
 
 // Allocate a file structure.

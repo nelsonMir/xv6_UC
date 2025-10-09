@@ -9,27 +9,19 @@
 #include "proc.h"
 #include "defs.h"
 
+
 // the UART control registers are memory-mapped
 // at address UART0. this macro returns the
 // address of one of the registers.
 //
 // *** Acceso MMIO via helpers con stride dinámico (1 u 4) y acceso 32-bit. ***
-static int uart_stride = 4; // probamos en uartinit() y ajustamos
+static int uart_stride = 4; // se autodetecta en uartinit()
 
-static inline volatile uint32 *uart_reg_ptr32(int reg)
-{
-  return (volatile uint32 *)(UART0 + (uart_stride * reg));
+static inline volatile unsigned char *uart_reg_ptr8(int reg) {
+  return (volatile unsigned char *)(UART0 + (uart_stride * reg));
 }
-
-static inline unsigned char ReadReg(int reg)
-{
-  return (unsigned char)(*uart_reg_ptr32(reg) & 0xFF);
-}
-
-static inline void WriteReg(int reg, unsigned char v)
-{
-  *uart_reg_ptr32(reg) = (uint32)v;
-}
+static inline unsigned char ReadReg(int reg) { return *uart_reg_ptr8(reg); }
+static inline void WriteReg(int reg, unsigned char v) { *uart_reg_ptr8(reg) = v; }
 
 
 // the UART control registers.
@@ -60,6 +52,9 @@ static inline void WriteReg(int reg, unsigned char v)
 #define IIR 2                 // Interrupt Identification Register
 #define IIR_NOPEND 0x01       // bit0=1 => no hay IRQ pendiente
 #define SCR 7                 // Scratch Register (libre uso)
+// DW-apb-uart: Uart Status Register (necesario para limpiar Busy Detect, etc.)
+#define USR 31
+ 
 
 // the transmit output buffer.
 struct spinlock uart_tx_lock;
@@ -93,6 +88,57 @@ static int __attribute__((unused)) uart_try_stride(int stride)
   return (v1 == 0x5A && v2 == 0xA5);
 }
 
+#if 0
+// Descubre el ID real del UART en el PLIC probando una IRQ segura (THRE).
+static int uart_irq_id = UART0_IRQ;  // valor por defecto; se corrige si detectamos otro
+
+static void uart_force_thre_irq_on(void) {
+  // Habilita ETBEI (bit1) temporalmente para generar THRE interrupt
+  unsigned char ier = ReadReg(IER);
+  ier |= 0x02;                 // ETBEI
+  WriteReg(IER, ier);
+}
+
+static void uart_force_thre_irq_off(void) {
+  unsigned char ier = ReadReg(IER);
+  ier &= (unsigned char)~0x02; // limpia ETBEI, dejamos solo RX si estaba
+  WriteReg(IER, ier);
+}
+
+static int uart_probe_plic_id(void)
+{
+  // Candidatos típicos en JH7110; ajusta/añade si hace falta
+  const int cand[] = { 32, 33, 34, 35, 36, 37, 38, 39 };
+  int found = -1;
+
+  // Asegura THR vacío y fuerza THRE-IRQ
+  (void)ReadReg(LSR);        // lee LSR para sincronizar
+  uart_force_thre_irq_on();
+
+  // Bucle de prueba: habilita SOLO un ID a la vez y mira plic_claim()
+  for (unsigned i = 0; i < sizeof(cand)/sizeof(cand[0]); i++) {
+    plic_disable_all_first64_extern();
+    plic_enable_only_extern(cand[i]);
+
+    // pequeña espera activa + prueba de claim
+    for (volatile int spin = 0; spin < 200000; spin++) {
+      int id = plic_claim();
+      if (id) {
+        printf("UART PLIC auto-detect: claim id=%d (cand=%d)\n", id, cand[i]);
+        plic_complete(id);
+        if (id == cand[i]) { found = id; }
+        break;
+      }
+    }
+    if (found != -1) break;
+  }
+
+  uart_force_thre_irq_off();
+  // Restablece a solo RX
+  WriteReg(IER, 0x01);
+  return found;
+}
+#endif
 
 // Trae arriba el 16550 y deja la UART lista para RX por IRQ y TX por polling.
 // Mantiene tu enfoque (stride dinámico + FIFO OFF mientras depuras).
@@ -106,21 +152,46 @@ uartinit(void)
     }
   }
 
-  // 2) Config básica: 8N1, FIFO off (temporal), líneas de módem y OUT2.
-  WriteReg(LCR, LCR_EIGHT_BITS);
-  WriteReg(FCR, 0x00);                           // FIFO off (más simple depurar)
-  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);   // OUT2 habilita routing de IRQ
-
-  // 3) Habilita SOLO RX por IRQ (TX lo haces por uartstart()/polling).
-  WriteReg(IER, IER_RX_ENABLE);
+  // 2) Deshabilita IRQs
+  WriteReg(IER, 0x00);
+  // 3) Entra en baud latch y programa algo inofensivo
+  //No reprogramar baud. Sólo salimos del latch por si venía activo.
+  //WriteReg(LCR, LCR_BAUD_LATCH);  // DLAB=1
+  //WriteReg(0, 0x03);              // DLL
+  //WriteReg(1, 0x00);              // DLM
+  // 4) 8N1, FIFOs ON + clear
+  WriteReg(LCR, LCR_EIGHT_BITS);                    // DLAB=0
+  WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);  // limpia FIFOs
+  // 5) OUT2 + líneas de módem
+  WriteReg(MCR, MCR_DTR | MCR_RTS | MCR_OUT2);
+  // Lee USR/LSR una vez para descartar posibles latencias del DW8250
+  (void)ReadReg(USR);
+  (void)ReadReg(LSR);
+  while (ReadReg(LSR) & LSR_RX_READY) (void)ReadReg(RHR);
+  // 6) SOLO RX por IRQ
+   WriteReg(IER, IER_RX_ENABLE);
 
   // 4) Init del spinlock y punteros de buffer TX
   initlock(&uart_tx_lock, "uart");
   uart_tx_w = uart_tx_r = 0;
 
-  // 5) Debug rápido para verificar acceso a registros
-  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\r\n",
+  // 7) Debug: comprueba que IER sea 0x01 tras configurar
+  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n",
        uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
+
+// Autodetecta el ID del PLIC para este UART y deja activado solo ese.
+/*int id = uart_probe_plic_id();
+if (id > 0) {
+  uart_irq_id = id;
+  printf("UART PLIC id detectado = %d\n", uart_irq_id);
+  plic_disable_all_first64_extern();
+  plic_enable_only_extern(uart_irq_id);
+} else {
+  printf("UART PLIC id: no detectado, usando valor por defecto %d\n", uart_irq_id);
+  plic_disable_all_first64_extern();
+  plic_enable_only_extern(uart_irq_id);
+}*/
+
 
 }
 
@@ -208,46 +279,47 @@ uartstart()
 
 // read one input character from the UART.
 // return -1 if none is waiting.
-int
-uartgetc(void)
+int uartgetc(void)
 {
-  if(ReadReg(LSR) & LSR_RX_READY){
-    // input data is ready.
-    return ReadReg(RHR);
-  } else {
-    return -1;
+  if (ReadReg(LSR) & LSR_RX_READY) {
+    int c = ReadReg(RHR) & 0xff;
+    if (c == '\r') c = '\n';
+    return c;
   }
+  return -1;
 }
+
 
 // handle a uart interrupt, raised because input has
 // arrived, or the uart is ready for more output, or
 // both. called from devintr().
-void
-uartintr(void)
+void uartintr(void)
 {
-  printf("UART IRQ top: IIR=0x%x LSR=0x%x\r\n", (int)ReadReg(IIR), (int)ReadReg(LSR));
+  unsigned char iir = ReadReg(IIR);
+  if (iir & 0x01) return;            // no hay IRQ pendiente
 
-  // --- DEBUG: imprime el estado al entrar al IRQ
-  unsigned char iir  = ReadReg(IIR);
-  unsigned char lsr0 = ReadReg(LSR);
-  printf("UART IRQ: IIR=0x%x LSR=0x%x\r\n", (int)iir, (int)lsr0);
-
-
-  // bit0 = 1 => no hay IRQ pendiente (espurio)
-  if (iir & 1)
-    return;
-
-  // RX: vacía todo lo disponible
-  while (ReadReg(LSR) & LSR_RX_READY) {
-    int c = ReadReg(RHR);
-    consoleintr(c);
+  // limpia rarezas DW si quieres, pero sin printf
+  if ((iir & 0x0E) == 0x06 || (iir & 0x0F) == 0x07) {
+    (void)ReadReg(USR);
+    (void)ReadReg(LSR);
+    if (ReadReg(LSR) & 0x01) (void)ReadReg(RHR);
+    //sin return: continúa a drenar RX
+    //return;
   }
 
-  // TX: empuja más si hay
+  // RX: drenar todo
+  while (ReadReg(LSR) & LSR_RX_READY) {
+    int ch = ReadReg(RHR) & 0xff;
+    if (ch == '\r') ch = '\n';
+    consoleintr(ch);
+  }
+
+  // TX: empuja si procede
   acquire(&uart_tx_lock);
   uartstart();
   release(&uart_tx_lock);
 }
+
 
 
 // --- helper visible desde otros módulos ---

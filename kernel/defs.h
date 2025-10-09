@@ -192,6 +192,8 @@ void            plicinit(void);
 void            plicinithart(void);
 int             plic_claim(void);
 void            plic_complete(int);
+void plic_disable_all_first64_extern(void); //debug
+void plic_enable_only_extern(int irq);
 
 // virtio_disk.c
 void            virtio_disk_init(void);

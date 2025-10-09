@@ -8,59 +8,66 @@
 // the riscv Platform Level Interrupt Controller (PLIC).
 //
 
+// plic.c (o un header común)
+static inline int plic_ctx_hart(void) {
+  // VF2 / Michael: macros PLIC_S* usan (hart-1) => devolver 1-based
+  return r_tp() + 1;  // r_tp() 0->hart0, 1->hart1 ... => 1->hart1, 2->hart2 ...
+}
 
 void
 plicinit(void)
 {
-  // Pon prioridad 1 (≠ 0) a un rango razonable de IRQs.
-  // Así no se quedan silenciados por prioridad=0.
-  for (int irq = 1; irq < 64; irq++)
-    *(volatile uint32 *)(PLIC_PRIORITY + irq*4) = 1;
+  // Prioridades mínimas solo a las fuentes que usamos
+  *(volatile uint32 *)(PLIC_PRIORITY + UART0_IRQ*4)   = 2;
+  *(volatile uint32 *)(PLIC_PRIORITY + VIRTIO0_IRQ*4) = 1;
 
   printf("plicinit done\n");
 }
 
-// Habilita un IRQ en el PLIC para este hart en S-mode (maneja ids > 31)
-static inline void plic_enable_irq(int hart, int irq)
+// Helpers para SENABLE del hart (sobreescribe el word indicado).
+static inline void plic_enable_only(int hart, int irq)
 {
   volatile uint32 *en = (uint32*)PLIC_SENABLE(hart);
   int word = irq / 32;
   int bit  = irq % 32;
-  en[word] |= (1u << bit);
+  en[word] = (1u << bit);
+  printf("PLIC_SENABLE: hart=%d addr=%p w=%d val=0x%x (habilitado irq %d)\n",
+         hart, (void*)&en[word], word, en[word], irq);
+}
+
+static inline void plic_disable_all_first64(int hart)
+{
+  volatile uint32 *en = (uint32*)PLIC_SENABLE(hart);
+  en[0] = 0;
+  en[1] = 0;
 }
 
 
 // arriba del archivo:
-extern void uart_enable_irq_runtime(void);
-
 void plicinithart(void)
 {
-  int hart = r_tp();
-
-  // Umbral a 0: permite pasar cualquier prioridad > 0
-  *(uint32*)PLIC_SPRIORITY(hart) = 0;
-
-  // Habilita el IRQ del UART y (si usas) virtio
-  plic_enable_irq(hart, UART0_IRQ);
-  plic_enable_irq(hart, VIRTIO0_IRQ);
-
-  // Habilita interrupciones externas en S-mode
-  w_sie(r_sie() | SIE_SEIE);
+  int hart = plic_ctx_hart();                  // 1-based para PLIC_S*
+  printf("plicinithart: r_tp=%ld cpuid=%d\r\n", r_tp(), cpuid());
+  *(uint32*)PLIC_SPRIORITY(hart) = 0;          // threshold 0
+   plic_disable_all_first64(hart);
+  // De momento NO habilitamos nada fijo aquí: dejará que uart autodetecte su ID.
+  w_sie(r_sie() | SIE_SEIE);                   // enable external ints
 }
 
-
-
-// ask the PLIC what interrupt we should serve.
-int
-plic_claim(void)
+int plic_claim(void)
 {
-  int hart = cpuid();
+  int hart = plic_ctx_hart();                  // 1-based
   return *(volatile uint32*)PLIC_SCLAIM(hart);
 }
-// tell the PLIC we've served this IRQ.
-void
-plic_complete(int irq)
+
+void plic_complete(int irq)
 {
-  int hart = cpuid();
+  int hart = plic_ctx_hart();                  // 1-based
   *(volatile uint32*)PLIC_SCLAIM(hart) = irq;
 }
+
+// Expuestos para que uart.c pueda usarlos en la autodetección.
+void plic_disable_all_first64_extern(void) { plic_disable_all_first64(plic_ctx_hart()); }
+void plic_enable_only_extern(int irq) { plic_enable_only(plic_ctx_hart(), irq); }
+
+

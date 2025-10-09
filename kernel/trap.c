@@ -22,6 +22,16 @@ trapinit(void)
   initlock(&tickslock, "time");
 }
 
+static inline void sbi_set_timer(uint64 when){
+  register uint64 a0 asm("a0") = when;
+  register uint64 a7 asm("a7") = 0x0UL; // legacy set_timer
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+}
+
+static inline uint64 rdtime_safe(void){
+  uint64 t; asm volatile("rdtime %0":"=r"(t)); return t;
+}
+
 // set up to take exceptions and traps while in the kernel.
 void
 trapinithart(void)
@@ -35,6 +45,8 @@ trapinithart(void)
   w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
 
    w_sscratch(0);                // ← esencial para el prologo de kernelvec
+
+   sbi_set_timer(rdtime_safe() + 1000000); 
 }
 
 //
@@ -218,13 +230,15 @@ clockintr()
     release(&tickslock);
 
       // --- TEMP: escanea RX por polling para que la consola responda
-    uart_debug_poll();
+    //uart_debug_poll();
   }
 
+  //uart_debug_poll();
   // ask for the next timer interrupt. this also clears
   // the interrupt request. 1000000 is about a tenth
   // of a second.
-  w_stimecmp(r_time() + 1000000);
+  sbi_set_timer(rdtime_safe() + 1000000);
+
 }
 
 // check if it's an external interrupt or software interrupt,
@@ -247,25 +261,19 @@ devintr(void)
         uartintr();
       } else if (irq == VIRTIO0_IRQ) {
         virtio_disk_intr();
-      } else if (uart_rx_ready()) {
-        // Heurística: si hay RX listo ¡es el UART!
-        printf("IRQ %d tiene RX_READY=1; lo trato como UART.\n", irq);
-        uartintr();
-      } else {
-        printf("unexpected PLIC irq %d\n", irq);
-      }
+      }  else {
+         printf("unexpected PLIC irq %d\n", irq);
+       }
 
       plic_complete(irq);
       return 1;
     }
     return 0;
 
-  } else if (scause == 0x8000000000000001L) {
-    // Timer
-    clockintr();
-    return 2;
-
-  } else {
+  } else if (scause == 0x8000000000000005UL) {  // S-mode timer interrupt
+  clockintr();
+  return 2;
+} else {
     return 0;
   }
 }
