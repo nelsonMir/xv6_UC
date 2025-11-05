@@ -6,7 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
-#include "stat.h"   // añade esto arriba de exec.
+#include "stat.h"   // añadir referencia en exec.
 
 
 
