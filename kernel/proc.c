@@ -300,7 +300,7 @@ userinit(void)
   uvmfirst(p->pagetable, initcode, initcode_len);
 
   // Mapear una página más para el stack
-  // ⚠️ Añadir PTE_U (y PTE_R) para que la vea el modo usuario
+  //  Añadir PTE_U (y PTE_R) para que la vea el modo usuario
   if (uvmalloc(p->pagetable, PGSIZE, 2*PGSIZE, PTE_R | PTE_W | PTE_U) == 0)
     panic("userinit: uvmalloc");
 
