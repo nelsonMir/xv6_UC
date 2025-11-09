@@ -30,7 +30,7 @@ int main(int argc, char *argv[]){
     }
 
     //vamos a comprobar que el argumento es un numero 
-    if(is_number(argv[1]) == 0){
+    if(is_number_sleep(argv[1]) == 0){
         //si no es un numero, entonces entramos aqui
         fprintf(2, "Error: argumento no numérico\n");
         //salimos con error
