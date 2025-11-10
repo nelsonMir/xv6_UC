@@ -188,6 +188,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->priority = 0;
+  p->creation_time = 0;
   p->state = UNUSED;
 }
 
