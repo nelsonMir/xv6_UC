@@ -35,7 +35,14 @@
 void
 consputc(int c)
 {
-  uartputc_sync(c);   // sin traducir; la traducción se hace en UART
+   if(c == BACKSPACE){
+    // retrocede, borra, retrocede
+    uartputc_sync('\b');
+    uartputc_sync(' ');
+    uartputc_sync('\b');
+  } else {
+    uartputc_sync(c);
+  }
 }
 
 

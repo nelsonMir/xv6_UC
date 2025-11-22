@@ -56,6 +56,8 @@ trapinithart(void)
 
    w_sscratch(0);                // ← esencial para el prologo de kernelvec
 
+   w_sstatus(r_sstatus() | SSTATUS_SIE);
+
    sbi_set_timer(rdtime_safe() + 1000000); 
 }
 
