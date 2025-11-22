@@ -157,6 +157,17 @@ uartinit(void)
   // 2) Deshabilita IRQs
   WriteReg(IER, 0x00);
 
+   // 2b) Configura baud rate (ej: 115200 con clock 24MHz -> divisor ~13)
+  // Entra en modo baud latch (DLAB=1)
+  WriteReg(LCR, LCR_EIGHT_BITS | LCR_BAUD_LATCH);
+
+  // Divisor = 13 (0x000D) -> DLL=0x0D, DLM=0x00 para 115200 aprox.
+  WriteReg(0, 0x0D);   // DLL (RHR/THR/DLL comparten reg 0)
+  WriteReg(1, 0x00);   // DLM (IER/DLM comparten reg 1)
+
+  // Sale de modo baud latch, vuelve a 8N1 normal
+  WriteReg(LCR, LCR_EIGHT_BITS);
+
   // 3) 8N1 y FIFO (OFF temporalmente para depurar RX claro y evitar rarezas)
   WriteReg(LCR, LCR_EIGHT_BITS);                      // DLAB=0, 8N1
   WriteReg(FCR, FCR_FIFO_ENABLE | FCR_FIFO_CLEAR);    // FIFO ON + clear
@@ -170,8 +181,8 @@ uartinit(void)
   (void)ReadReg(LSR);
   while (ReadReg(LSR) & LSR_RX_READY) (void)ReadReg(RHR);
 
-  // 6) Habilita IRQ de RX **y también TX**
-  WriteReg(IER, IER_RX_ENABLE | IER_TX_ENABLE);  // <- clave para que el TX avance
+  // 6) Al inicio, solo IRQ de RX. TX se activará cuando haya datos en el buffer
+  WriteReg(IER, IER_RX_ENABLE);  // <- clave para que el TX avance
 
   // 7) Init del spinlock y punteros de buffer TX
   initlock(&uart_tx_lock, "uart");
@@ -216,6 +227,10 @@ uartputc(int c)
   }
   uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE] = c;
   uart_tx_w += 1;
+
+  // Asegura que la IRQ de TX está activada si hay datos pendientes
+  unsigned char ier = ReadReg(IER);
+  WriteReg(IER, ier | IER_TX_ENABLE);
 
   uartstart();
   release(&uart_tx_lock);
@@ -262,6 +277,11 @@ uartstart()
     if(uart_tx_w == uart_tx_r){
       // transmit buffer is empty.
       (void)ReadReg(IIR);
+
+      // IMPORTANTE: desactivar IRQ de TX si no hay nada que mandar.
+      unsigned char ier = ReadReg(IER);
+      WriteReg(IER, ier & ~IER_TX_ENABLE);
+
       return;
     }
     
