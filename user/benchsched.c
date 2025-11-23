@@ -3,30 +3,30 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
-// ===== Configuración por defecto (en ticks) =====
-// 1 tick ~ 10 ms en xv6 MIT.
-#define DEF_LONG_TICKS   400   // ~4 s
-#define DEF_SHORT_TICKS   80   // ~0.8 s
-#define MAX_PROCS         128  // límite práctico
+// onfiguración por defecto (en ticks) 
+// 1 tick son 10 ms en xv6.
+#define DEF_LONG_TICKS   400   // 400 ms
+#define DEF_SHORT_TICKS   80   // 800 ms
+#define MAX_PROCS         128  // límite práctico de procesos
 
 // Mensajes por pipe para medir tiempos (binario simple)
-enum { MSG_STARTED = 1, MSG_DONE = 2 };
+enum { MSG_STARTED = 1, MSG_DONE = 2 }; //se define un pequenio protocolo por pipes para indicar cuando un proceso haya terminado
 
-// role: 0 = CPU corto, 1 = CPU largo
 struct msg {
   int pid;
-  int type;
+  int type; //STARTED o DONE
   uint t;   // tick en el momento de enviar
-  int role;
+  int role; //0 es un proceso corto, 1 es un proceso largo
 };
 
 // Trabajo CPU-bound durante target_ticks_from_now desde ahora
 static void
 work_cpu(uint target_ticks_from_now)
 {
-  uint t0 = uptime();
+  uint t0 = uptime(); //uptime devuelve el número de ticks del sistema en ese momento
   volatile uint64 s = 0;
-  while (uptime() - t0 < target_ticks_from_now) {
+  while (uptime() - t0 < target_ticks_from_now) { //mientras no hayan pasado el numero de ticks objetivo se quema cpu sin bloquearse, para 
+    //que sea el planificador el que decida cuando entregar la cpu (si hay yield o no)
     for (int i = 0; i < 100000; i++)
       s += i;
   }
@@ -62,15 +62,15 @@ usage(void)
     "  benchsched 5 6000 500 1   # largo ~6s, cortos ~0.5s, largo al final\n");
 }
 
-struct rec {
+struct rec { //el array de registros del padre
   int pid;
   int role;         // 0=CPU corto, 1=CPU largo
-  uint t_create;    // tick en que se "crea" el experimento
+  uint t_create;    // tiempo de inicio del experimento 
   uint t_start;     // primer tick en que el hijo se ejecuta
   uint t_finish;    // tick cuando el hijo termina
   int started_seen;
   int done_seen;
-};
+}; //el padre va leyendo del pipe y en base a eso rellena t_start y t_finish de sus hijos
 
 static int
 find_idx_by_pid(struct rec *R, int n, int pid)
@@ -162,7 +162,10 @@ for (int i = 0; i < total; i++) {
 
   uint t0 = uptime(); // referencia común de creación
 
-  int launched = 0;
+  int launched = 0; 
+  //bucle del padre para crear los hijos, los hijos herendan los valores del padre 
+  //asi que 
+  
   for (int i = 0; i < total; i++) {
     // Decidir rol según long_pos:
     // long_pos == 0 -> largo primero (i == 0)
@@ -268,19 +271,7 @@ for (int i = 0; i < total; i++) {
   if (count_turn > 0)
     printf("avg turnaround: %u ticks\n", sum_turn / count_turn);
 
-  // Throughput aproximado
-  if (count_turn > 0) {
-    uint t_end = uptime();
-    uint elapsed_ticks = (t_end - t0);
-    if (elapsed_ticks == 0)
-      elapsed_ticks = 1;
-    uint secs = (elapsed_ticks + 99) / 100; // ~10ms/tick
-    if (secs == 0)
-      secs = 1;
-    printf("throughput: %d procs / ~%u s = %d procs/s\n",
-           count_turn, secs, count_turn / (int)secs);
-  }
-
+  
   free(R);
 
   exit(0);

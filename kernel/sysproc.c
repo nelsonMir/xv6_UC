@@ -194,6 +194,18 @@ uint64 sys_nice(void){
   return(-1);
 }
 
+//helper de sys_setscheduler
+static const char*
+policy_name(int p)
+{
+  switch(p){
+  case 0: return "RR";
+  case 1: return "FCFS";
+  case 2: return "PRIORITIES";
+  default: return "UNKNOWN";
+  }
+}
+
 //cambiar el tipo de planificador 
 uint64 sys_setscheduler(void)
 {
@@ -212,7 +224,10 @@ uint64 sys_setscheduler(void)
   // Cambio "en caliente"
   scheduler_policy = policy;
 
-   printf("setscheduler: antigua %d -> nueva %d\n", old, scheduler_policy);
+  printf("setscheduler: %s -> %s\n",
+         policy_name(old), policy_name(scheduler_policy));
 
   return 0;
 }
+
+
