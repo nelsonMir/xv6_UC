@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+extern int scheduler_policy; //para eliminar la preemption si el planificador es FCFS
+
 void
 trapinit(void)
 {
@@ -77,8 +79,12 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2){
+    if(scheduler_policy != 1){      // 1 == FCFS es el planificador no hay yield
+      yield();                      // planificador RR y prioridades
+    }
+  }
+  
 
   usertrapret();
 }
@@ -151,8 +157,11 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0)
-    yield();
+  if(which_dev == 2 && myproc() != 0){
+    if(scheduler_policy != 1){      // 1 == FCFS es el planificador no hay yield
+      yield();                      // planificador RR y prioridades
+    }
+  }
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.

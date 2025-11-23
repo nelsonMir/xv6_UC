@@ -193,3 +193,26 @@ uint64 sys_nice(void){
   //si no se encuentra el proceso
   return(-1);
 }
+
+//cambiar el tipo de planificador 
+uint64 sys_setscheduler(void)
+{
+  int policy;
+
+  // Leer el argumento entero desde usuario
+  argint(0, &policy);
+  
+
+  // Validar el rango (ajusta si cambias los tipos)
+  if (policy < 0 || policy > 2)
+    return -1;
+
+  //guardamos el anterior planificador 
+  int old = scheduler_policy;
+  // Cambio "en caliente"
+  scheduler_policy = policy;
+
+   printf("setscheduler: antigua %d -> nueva %d\n", old, scheduler_policy);
+
+  return 0;
+}

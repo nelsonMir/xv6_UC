@@ -28,6 +28,7 @@ int pagesize(void);
 int ps(void);
 int getpriority(int);
 int nice(int, int);
+int setscheduler(int);
 
 // ulib.c
 int stat(const char*, struct stat*);

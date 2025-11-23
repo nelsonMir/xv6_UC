@@ -26,4 +26,4 @@
 #define SYS_ps     24
 #define SYS_getpriority 25
 #define SYS_nice    26
-
+#define SYS_setscheduler 27

@@ -147,6 +147,8 @@ UPROGS=\
 	$U/_getpriority\
 	$U/_nice\
 	$U/_pwd\
+	$U/_setsched\
+	$U/_benchsched\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
