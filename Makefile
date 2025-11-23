@@ -99,7 +99,9 @@ UPROGS = \
   $(U)/_ps \
   $(U)/_getpriority \
   $(U)/_nice \
-  $(U)/_pwd
+  $(U)/_pwd \
+  $(U)/_setsched \
+  $(U)/_benchsched \
 
 # ============================================
 #  Kernel final (ELF + bin) y símbolos

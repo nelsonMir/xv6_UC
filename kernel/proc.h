@@ -26,6 +26,7 @@ struct cpu {
   int intena;                 // Were interrupts enabled before push_off()?
 };
 
+extern int scheduler_policy; //variable global del tipo de planificador
 extern struct cpu cpus[NCPU];
 
 // per-process data for the trap handling code in trampoline.S.

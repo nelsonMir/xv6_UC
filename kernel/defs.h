@@ -207,6 +207,7 @@ void            virtio_disk_intr(void);
 //schedulers.c
 int             schedule_round_robin(struct cpu *);
 int             schedule_fcfs(struct cpu *);
+int             schedule_priority(struct cpu *);
 
 //NUEVO
 //DEBUG

@@ -37,12 +37,12 @@ int schedule_round_robin(struct cpu *c){
         p->state = RUNNING;
         c->proc = p;
 
-        printf("sched rr: run pid=%d (%s)\r\n", p->pid, p->name);
+        //printf("sched rr: run pid=%d (%s)\r\n", p->pid, p->name);
 
         swtch(&c->context, &p->context);
 
          // Hemos vuelto del proceso
-        printf("sched rr: back pid=%d (%s) state=%d\r\n", p->pid, p->name, p->state);
+        //printf("sched rr: back pid=%d (%s) state=%d\r\n", p->pid, p->name, p->state);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -88,6 +88,50 @@ int schedule_fcfs(struct cpu *c)
     c->proc = 0;
     release(&earliest->lock);
     
+    return 1;
+  }
+
+  return 0;
+}
+
+int
+schedule_priority(struct cpu *c)
+{
+  struct proc *p;
+  struct proc *best = 0;
+
+  // Buscar el RUNNABLE con mayor prioridad (mayor prioridad -20 y menor prioridad 19)
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state == RUNNABLE){
+      if(best == 0 ||
+         p->priority < best->priority ||  // prioridad más alta (más negativa)
+         (p->priority == best->priority &&
+          p->creation_time < best->creation_time)) { // desempate opcional, se escoje el más antiguo
+        // Si ya teníamos uno candidato, soltamos su lock
+        if(best)
+          release(&best->lock);
+        best = p; // ahora best tiene el lock de p
+      } else {
+        // Este no es mejor candidato, soltamos su lock
+        release(&p->lock);
+      }
+    } else {
+      // No está RUNNABLE, soltamos lock
+      release(&p->lock);
+    }
+  }
+
+  if(best){
+    // Aquí seguimos con el lock de best cogido
+    best->state = RUNNING;
+    c->proc = best;
+
+    swtch(&c->context, &best->context);
+
+    c->proc = 0;
+    release(&best->lock);
+
     return 1;
   }
 

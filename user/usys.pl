@@ -42,3 +42,4 @@ entry("pagesize");
 entry("ps");
 entry("getpriority");
 entry("nice");
+entry("setscheduler");

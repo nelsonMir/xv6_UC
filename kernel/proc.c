@@ -41,7 +41,7 @@ char *states[] = {
 };
 
 //variable global para seleccionar el tipo de planificador a usar y por defecto RR
-int scheduler_policy = 1; // 0: RR, 1: FCFS, 2: Lottery
+int scheduler_policy = 1; // 0: RR, 1: FCFS, 2: prioridades
 
 
 // Allocate a page for each process's kernel stack.
@@ -572,6 +572,10 @@ scheduler(void)
         found = schedule_fcfs(c);
         break;
 
+      case 2:
+        found = schedule_priority(c);
+        break;
+        
       default:
         found = schedule_round_robin(c);
         break;

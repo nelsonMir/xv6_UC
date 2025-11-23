@@ -26,6 +26,8 @@ void kernelvec();
 
 extern int devintr();
 
+extern int scheduler_policy; //para eliminar la preemption si el planificador es FCFS
+
 void
 trapinit(void)
 {
@@ -113,8 +115,11 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2){
+    if(scheduler_policy != 1){      // 1 == FCFS es el planificador no hay yield
+      yield();                      // planificador RR y prioridades
+    }
+  }
 
   usertrapret();
 }
@@ -173,8 +178,11 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0)
-    yield();
+  if(which_dev == 2 && myproc() != 0){
+    if(scheduler_policy != 1){      // 1 == FCFS es el planificador no hay yield
+      yield();                      // planificador RR y prioridades
+    }
+  }
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -185,7 +193,8 @@ kerneltrap()
 void
 clockintr()
 {
-  if(cpuid() == 0){
+  //monoprocesador, asi que el hart que sea va a aumentar los ticks
+  //if(cpuid() == 0){
     acquire(&tickslock);
     ticks++;
     wakeup(&ticks);
@@ -193,7 +202,7 @@ clockintr()
 
       // --- TEMP: escanea RX por polling para que la consola responda
     //uart_debug_poll();
-  }
+  //}
 
   //uart_debug_poll();
   // ask for the next timer interrupt. this also clears
