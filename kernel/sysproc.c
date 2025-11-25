@@ -38,15 +38,32 @@ sys_wait(void)
 uint64
 sys_sbrk(void)
 {
-  uint64 addr;
   int n;
+  struct proc *p = myproc();
 
   argint(0, &n);
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+
+  uint64 addr = p->sz;  // valor anterior del break (lo que devuelve sbrk)
+
+  if(n < 0){
+    // Encogemos el heap: aquí sí usamos growproc, que acaba llamando a uvmdealloc().
+    if(growproc(n) < 0)
+      return -1;
+  } else if(n > 0){
+    // Lazy allocation: NO llamamos a growproc para reservar páginas.
+    // Solo movemos el "límite lógico" del heap.
+    uint64 newsz = p->sz + n;
+
+    // (Opcional) podrías añadir alguna comprobación de overflow / límite:
+    // if(newsz >= MAXVA) return -1;
+
+    p->sz = newsz;
+  }
+
+  // n == 0 -> no cambia nada, solo devolvemos el break actual (como siempre).
   return addr;
 }
+
 
 uint64
 sys_sleep(void)

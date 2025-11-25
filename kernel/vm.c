@@ -5,14 +5,15 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
  */
 pagetable_t kernel_pagetable;
 
-extern char etext[];  // kernel.ld sets this to end of kernel code.
-
+extern char etext[];      // kernel.ld sets this to end of kernel code.
 extern char trampoline[]; // trampoline.S
 
 // Make a direct-map page table for the kernel.
@@ -22,6 +23,8 @@ kvmmake(void)
   pagetable_t kpgtbl;
 
   kpgtbl = (pagetable_t) kalloc();
+  if(kpgtbl == 0)
+    panic("kvmmake: kalloc");
   memset(kpgtbl, 0, PGSIZE);
 
   // uart registers
@@ -37,7 +40,8 @@ kvmmake(void)
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
   // map kernel data and the physical RAM we'll make use of.
-  kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  kvmmap(kpgtbl, (uint64)etext, (uint64)etext,
+         PHYSTOP-(uint64)etext, PTE_R | PTE_W);
 
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
@@ -45,7 +49,7 @@ kvmmake(void)
 
   // allocate and map a kernel stack for each process.
   proc_mapstacks(kpgtbl);
-  
+
   return kpgtbl;
 }
 
@@ -59,7 +63,7 @@ kvminit(void)
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
-kvminithart()
+kvminithart(void)
 {
   // wait for any previous writes to the page table memory to finish.
   sfence_vma();
@@ -93,7 +97,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      if(!alloc || (pagetable = (pagetable_t)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
@@ -154,7 +158,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 
   if(size == 0)
     panic("mappages: size");
-  
+
   a = va;
   last = va + size - PGSIZE;
   for(;;){
@@ -172,8 +176,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 }
 
 // Remove npages of mappings starting from va. va must be
-// page-aligned. The mappings must exist.
-// Optionally free the physical memory.
+// page-aligned. Optionally free the physical memory.
+//
+// Versión tolerante (para lazy allocation): si la página no está
+// mapeada simplemente se salta (no hace panic).
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -185,9 +191,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -201,7 +207,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 // create an empty user page table.
 // returns 0 if out of memory.
 pagetable_t
-uvmcreate()
+uvmcreate(void)
 {
   pagetable_t pagetable;
   pagetable = (pagetable_t) kalloc();
@@ -222,8 +228,12 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
   if(sz >= PGSIZE)
     panic("uvmfirst: more than a page");
   mem = kalloc();
+  if(mem == 0)
+    panic("uvmfirst: kalloc");
   memset(mem, 0, PGSIZE);
-  mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
+  if(mappages(pagetable, 0, PGSIZE, (uint64)mem,
+              PTE_W|PTE_R|PTE_X|PTE_U) != 0)
+    panic("uvmfirst: mappages");
   memmove(mem, src, sz);
 }
 
@@ -246,7 +256,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       return 0;
     }
     memset(mem, 0, PGSIZE);
-    if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
+    if(mappages(pagetable, a, PGSIZE, (uint64)mem,
+                PTE_R|PTE_U|xperm) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
@@ -309,6 +320,8 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+//
+// Versión tolerante: permite huecos en [0, sz) (lazy allocation).
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -319,9 +332,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -345,7 +358,7 @@ void
 uvmclear(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
-  
+
   pte = walk(pagetable, va, 0);
   if(pte == 0)
     panic("uvmclear");
@@ -355,21 +368,21 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+//
+// Usa walkaddr(): asume que las páginas deben estar ya mapeadas;
+// si no lo están, el fallo lo resuelve el manejador de traps (lazy_alloc).
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-  pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     if(va0 >= MAXVA)
       return -1;
-    pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0)
       return -1;
-    pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -448,4 +461,67 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+/************************************************************
+ * Lazy allocation helpers
+ ************************************************************/
+
+// Lazy alloc para escrituras (p.ej. pipes, write en páginas no
+// materializadas pero dentro de [stack, sz)).
+int
+lazy_wr_alloc(uint64 va, struct proc *p)
+{
+  va = PGROUNDDOWN(va);
+
+  if(va >= p->sz || va < PGROUNDDOWN(p->trapframe->sp)) {
+    // dirección fuera del rango de usuario válido
+    return -1;
+  }
+
+  char *mem = kalloc();
+  if(mem == 0){
+    p->killed = 1;
+    return -1;
+  }
+
+  memset(mem, 0, PGSIZE);
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem,
+              PTE_W|PTE_R|PTE_U) != 0){
+    kfree(mem);
+    p->killed = 1;
+    return -1;
+  }
+
+  return 0;
+}
+
+// Lazy alloc para sbrk(): se llama desde el manejador de traps
+// cuando hay un page fault de load/store dentro de [stack, sz).
+int
+lazy_alloc(uint64 stval, struct proc *p)
+{
+  uint64 va = PGROUNDDOWN(stval);
+
+  if(stval >= p->sz || stval < PGROUNDDOWN(p->trapframe->sp)) {
+    // fallo fuera de rango -> matar proceso
+    p->killed = 1;
+    return -1;
+  }
+
+  char *mem = kalloc();
+  if(mem == 0){
+    p->killed = 1;
+    return -1;
+  }
+
+  memset(mem, 0, PGSIZE);
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem,
+              PTE_W|PTE_R|PTE_U) != 0){
+    kfree(mem);
+    p->killed = 1;
+    return -1;
+  }
+
+  return 0;
 }

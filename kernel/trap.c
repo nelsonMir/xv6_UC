@@ -48,11 +48,13 @@ usertrap(void)
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
-  
+
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  uint64 scause = r_scause();
+
+  if(scause == 8){
     // system call
 
     if(killed(p))
@@ -67,10 +69,27 @@ usertrap(void)
     intr_on();
 
     syscall();
+
   } else if((which_dev = devintr()) != 0){
-    // ok
+    // external / timer interrupt: ok, ya lo ha manejado devintr().
+
+  } else if(scause == 13 || scause == 15){
+    // 13: load page fault
+    // 15: store/AMO page fault
+
+    uint64 stval = r_stval(); // VA que causó el fallo
+
+    if(lazy_alloc(stval, p) < 0){
+      // lazy_alloc ya puede haber marcado p->killed si es fuera de rango.
+      printf("usertrap: lazy_alloc failed va=0x%lx pid=%d\n",
+             stval, p->pid);
+      // No hacemos exit aquí directamente: dejamos que el bloque
+      // de más abajo vea killed(p) y haga exit().
+    }
+
   } else {
-    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+    // cualquier otra excepción inesperada
+    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", scause, p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
   }
@@ -80,14 +99,14 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
-    if(scheduler_policy != 1){      // 1 == FCFS es el planificador no hay yield
+    if(scheduler_policy != 1){      // 1 == FCFS planificador sin yield
       yield();                      // planificador RR y prioridades
     }
   }
-  
 
   usertrapret();
 }
+
 
 //
 // return to user space
