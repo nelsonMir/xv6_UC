@@ -29,6 +29,8 @@ int ps(void);
 int getpriority(int);
 int nice(int, int);
 int setscheduler(int);
+int term_raw(void);
+int term_cooked(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

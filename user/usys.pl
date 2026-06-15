@@ -43,3 +43,5 @@ entry("ps");
 entry("getpriority");
 entry("nice");
 entry("setscheduler");
+entry("term_raw");
+entry("term_cooked");

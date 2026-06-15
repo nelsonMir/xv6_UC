@@ -248,3 +248,16 @@ uint64 sys_setscheduler(void)
 }
 
 
+//cambiar el modo de la consola 
+uint64 sys_term_raw(void)
+{
+  console_set_raw(1);
+  return 0;
+}
+
+uint64 sys_term_cooked(void)
+{
+  console_set_raw(0);
+  return 0;
+}
+

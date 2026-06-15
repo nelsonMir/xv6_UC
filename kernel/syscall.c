@@ -108,6 +108,8 @@ extern uint64 sys_ps(void);
 extern uint64 sys_getpriority(void);
 extern uint64 sys_nice(void);
 extern uint64 sys_setscheduler(void);
+extern uint64 sys_term_raw(void);
+extern uint64 sys_term_cooked(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -139,7 +141,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_ps]      sys_ps,
 [SYS_getpriority] sys_getpriority,
 [SYS_nice]    sys_nice,
-[SYS_setscheduler] sys_setscheduler
+[SYS_setscheduler] sys_setscheduler,
+[SYS_term_raw]    sys_term_raw,
+[SYS_term_cooked] sys_term_cooked
 };
 
 void

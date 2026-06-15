@@ -149,6 +149,8 @@ UPROGS=\
 	$U/_pwd\
 	$U/_setsched\
 	$U/_benchsched\
+	$U/_rawtest\
+	$U/_rvnano\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

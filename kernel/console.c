@@ -50,6 +50,9 @@ struct {
   uint r;  // Read index
   uint w;  // Write index
   uint e;  // Edit index
+
+  //permitir la consola en crudo y no linea a linea para el editor de texto 
+  int raw_mode;
 } cons;
 
 //
@@ -137,6 +140,20 @@ consoleintr(int c)
 {
   acquire(&cons.lock);
 
+  //si la consola esta en modo crudo, cada byte recibido se introduce directamente en el buffer y se despierta al proceso que esta leyendo.
+  //Es decir, si la consola no esta en modo crudo, al hacer enter y meter un comando se hace un echo para poner lo que el usuario habia escrito. En modo raw no hacemos eso
+  if(cons.raw_mode){
+    if(cons.e - cons.r < INPUT_BUF_SIZE){
+      cons.buf[cons.e++ % INPUT_BUF_SIZE] = c;
+
+      cons.w = cons.e;
+      wakeup(&cons.r);
+    }
+
+    release(&cons.lock);
+    return;
+  }
+
   switch(c){
   case C('P'):  // Print process list.
     procdump();
@@ -185,8 +202,28 @@ consoleinit(void)
 
   uartinit();
 
+  //poner la consola en modo no raw por defecto 
+  cons.raw_mode = 0;
+
   // connect read and write system calls
   // to consoleread and consolewrite.
   devsw[CONSOLE].read = consoleread;
   devsw[CONSOLE].write = consolewrite;
+}
+
+//cambia el modo de la consola entre raw y linea a linea
+void
+console_set_raw(int enabled)
+{
+  acquire(&cons.lock);
+
+  cons.raw_mode = enabled;
+
+  /*
+   * Vacía cualquier entrada pendiente para no entregar al editor
+   * caracteres de una línea anterior.
+   */
+  cons.r = cons.w = cons.e = 0;
+
+  release(&cons.lock);
 }
