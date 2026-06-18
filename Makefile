@@ -151,6 +151,8 @@ UPROGS=\
 	$U/_benchsched\
 	$U/_rawtest\
 	$U/_rvnano\
+	$U/_asxv6\
+	$U/_ldxv6\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
