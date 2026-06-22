@@ -22,6 +22,8 @@
 #include "defs.h"
 #include "fs.h"
 #include "buf.h"
+//sd card 
+#include "sdcard.h"
 
 struct {
   struct spinlock lock;
@@ -109,8 +111,11 @@ bread(uint dev, uint blockno)
       #endif
     }
       
+    /* Implementación con ramdisk 
     virtio_disk_rw(b, 0); // leer del ramdisk
-    b->valid = 1;
+    b->valid = 1;*/
+    sd_rw(b, 0);
+
   } else {
     if (blockno < 16){
       #if DBG_BIO
@@ -134,8 +139,11 @@ bwrite(struct buf *b)
     printf("bwrite: blk %u\r\n", b->blockno);
     #endif
   }
-    
+  
+  /* implementación con ramdisk 
   virtio_disk_rw(b, 1);
+  */
+  sd_rw(b, 1);
 }
 
 // Release a locked buffer.

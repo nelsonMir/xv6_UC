@@ -66,3 +66,8 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+
+// VisionFive 2 / JH7110: microSD controller
+#define MMC1       0x16020000L
+#define MMC1_SIZE  0x10000L

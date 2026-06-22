@@ -67,10 +67,10 @@ OBJS = \
   $(K)/sysfile.o \
   $(K)/kernelvec.o \
   $(K)/plic.o \
-  $(K)/ramdisk_xv6.o \
+  $(K)/sdcard.o \
   $(K)/schedulers.o \
   $(K)/initcode_blob.o \
-  $(K)/fsimg_blob.o          # <— A PRUEBA DE BALAS: define fs_img y fs_img_len
+  #$(K)/fsimg_blob.o          # <— A PRUEBA DE BALAS: define fs_img y fs_img_len
 
 # Librerías de usuario
 ULIB = $(U)/ulib.o $(U)/usys.o $(U)/printf.o $(U)/umalloc.o
@@ -107,7 +107,8 @@ UPROGS = \
 #  Kernel final (ELF + bin) y símbolos
 # ============================================
 
-$(T)/kernel.bin: $(OBJS) $(linker) fs.img
+#$(T)/kernel.bin: $(OBJS) $(linker) fs.img --------------- quitamos la regla que hacia que el kernel llevara dentro el fs (fs.img)
+$(T)/kernel.bin: $(OBJS) $(linker)
 	@mkdir -p $(T)
 	$(LD) -T $(linker) -o $(T)/kernel $(OBJS)
 	$(OBJDUMP) -S $(T)/kernel > $(T)/kernel.asm

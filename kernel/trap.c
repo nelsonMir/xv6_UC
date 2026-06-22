@@ -233,7 +233,7 @@ devintr(void)
       if (irq == UART0_IRQ) {
         uartintr();
       } else if (irq == VIRTIO0_IRQ) {
-        virtio_disk_intr();
+        //virtio_disk_intr(); ya no se usa virtio/ramdisk
       }  else {
          #if VERBOSE_PLIC
          printf("unexpected PLIC irq %d\n", irq);

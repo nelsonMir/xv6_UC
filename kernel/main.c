@@ -61,8 +61,10 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("iinit done\r\n");
     fileinit();      // file table
     printf("fileinit done\r\n");
-    virtio_disk_init(); // emulated hard disk
-    printf("virtio_disk_init done\r\n");
+    sd_init();       // microSD disk
+    printf("sd_init done\r\n");
+    //virtio_disk_init();  emulated hard disk
+    //printf("virtio_disk_init done\r\n");
     userinit();      // first user process
     printf("userinit done\r\n");
     __sync_synchronize();

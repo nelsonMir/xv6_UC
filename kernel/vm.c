@@ -34,6 +34,7 @@ pagetable_t kvmmake(void)
 
   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
+  kvmmap(kpgtbl, MMC1, MMC1, MMC1_SIZE, PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X | PTE_A | PTE_D);
