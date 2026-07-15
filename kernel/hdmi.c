@@ -6,31 +6,23 @@
 
 /*
  * ================================================================
- * StarFive JH7110 HDMI driver — V4
+ * StarFive JH7110 HDMI driver 
  * ================================================================
  *
  * Resolución:
  *   1920x1080, 60 Hz
  *
- * Formato de framebuffer:
+ * Formato:
  *   32 bits por píxel
  *
- * Framebuffer físico:
- *   FRAMEBUFFER_PA, definido en memlayout.h
- *
- * Esta versión:
- *   - enciende el dominio VOUT;
- *   - habilita clocks;
- *   - libera resets;
- *   - genera un patrón de prueba;
- *   - programa DC8200;
- *   - programa el PLL HDMI;
- *   - enciende PHY y TMDS.
+ * Cambio:
+ *   limpieza explícita del framebuffer mediante el controlador
+ *   SiFive/JH7110 CCACHE antes de que el DC8200 empiece a leerlo.
  */
 
 /*
  * ------------------------------------------------
- * Modo de vídeo
+ * Modo de vídeo y framebuffer
  * ------------------------------------------------
  */
 
@@ -39,10 +31,29 @@
 #define FB_BYTES_PER_PIXEL       4U
 #define FB_STRIDE                (FB_WIDTH * FB_BYTES_PER_PIXEL)
 
+#define FB_USED_SIZE             \
+  ((uint64)FB_STRIDE * (uint64)FB_HEIGHT)
+
 /*
- * El contador de tiempo del JH7110 funciona a 4 MHz.
+ * El contador TIME del JH7110 funciona a 4 MHz.
  */
 #define JH7110_TIMEBASE_HZ       4000000UL
+
+/*
+ * ------------------------------------------------
+ * Controlador de caché SiFive/JH7110
+ * ------------------------------------------------
+ 
+   El framebuffer lo escribe la CPU, pero lo lee el DC8200 mediante DMA.
+ 
+   El controlador de caché dispone de un registro FLUSH64. Para limpiar
+   una línea se escribe su dirección física de 64 bits en:
+ 
+    CCACHE_BASE + 0x200
+ */
+
+#define CCACHE_FLUSH64           0x0200U
+#define CCACHE_LINE_SIZE         64UL
 
 /*
  * ------------------------------------------------
@@ -65,17 +76,11 @@
  */
 
 #define CLK_ENABLE_BIT           (1U << 31)
-
-/*
- * Los mux utilizados para dc_pix0/dc_pix1 tienen la selección
- * de parent en el bit 24.
- */
 #define CLK_PARENT_SELECT_BIT    (1U << 24)
 
 /*
  * ------------------------------------------------
  * SYS CRG
- * Base definida como SYS_CRG_BASE en memlayout.h.
  * ------------------------------------------------
  */
 
@@ -95,7 +100,6 @@
 /*
  * ------------------------------------------------
  * VOUT CRG
- * Base definida como VOUT_CRG_BASE en memlayout.h.
  * ------------------------------------------------
  */
 
@@ -122,7 +126,7 @@
 
 /*
  * ------------------------------------------------
- * Acceso al framebuffer
+ * Framebuffer
  * ------------------------------------------------
  */
 
@@ -131,7 +135,7 @@ static volatile uint32 *const framebuffer =
 
 /*
  * ------------------------------------------------
- * Helpers MMIO
+ * Accesos MMIO
  * ------------------------------------------------
  */
 
@@ -159,6 +163,19 @@ mmio_write32(uint64 address, uint32 value)
   asm volatile("fence iorw, iorw" ::: "memory");
 }
 
+/*
+ * Escritura MMIO relajada de 64 bits.
+ *
+ * Se utiliza dentro del bucle de limpieza de cache. Las barreras se
+ * ejecutan una vez antes y otra despues del rango completo, evitando
+ * ejecutar dos fences por cada línea de 64 bytes.
+ */
+static inline void
+mmio_write64_relaxed(uint64 address, uint64 value)
+{
+  *(volatile uint64 *)address = value;
+}
+
 static inline void
 mmio_update32(uint64 address,
               uint32 clear_mask,
@@ -181,8 +198,11 @@ delay_loop(uint64 iterations)
 }
 
 /*
- * Lee el contador TIME del procesador.
+ * ------------------------------------------------
+ * Tiempo
+ * ------------------------------------------------
  */
+
 static inline uint64
 hdmi_read_time(void)
 {
@@ -193,9 +213,6 @@ hdmi_read_time(void)
   return value;
 }
 
-/*
- * Retardo basado en el contador de 4 MHz.
- */
 static void
 delay_ms(uint32 milliseconds)
 {
@@ -205,7 +222,8 @@ delay_ms(uint32 milliseconds)
   start = hdmi_read_time();
 
   ticks =
-    ((uint64)JH7110_TIMEBASE_HZ * milliseconds) / 1000U;
+    ((uint64)JH7110_TIMEBASE_HZ *
+     (uint64)milliseconds) / 1000U;
 
   while((hdmi_read_time() - start) < ticks)
     asm volatile("nop");
@@ -213,7 +231,7 @@ delay_ms(uint32 milliseconds)
 
 /*
  * ------------------------------------------------
- * Helpers de clocks
+ * Clocks
  * ------------------------------------------------
  */
 
@@ -233,9 +251,6 @@ clock_divider_set(uint64 address,
                 divider & divider_mask);
 }
 
-/*
- * Selecciona parent 0 y habilita el gate del clock composite.
- */
 static void
 clock_parent0_enable(uint64 address)
 {
@@ -281,16 +296,16 @@ pmu_dump_regs(const char *tag)
 
   printf("pmu %s:\n", tag);
 
-  printf("  turn_on=0x%x encourage=0x%x\n",
-         turn_on,
-         encourage);
+  printf("  turn_on=0x%lx encourage=0x%lx\n",
+         (uint64)turn_on,
+         (uint64)encourage);
 
-  printf("  current=0x%x vout=%d "
-         "sequence=0x%x events=0x%x\n",
-         current,
-         (current & PMU_VOUT_BIT) != 0,
-         sequence,
-         events);
+  printf("  current=0x%lx vout=%d "
+         "sequence=0x%lx events=0x%lx\n",
+         (uint64)current,
+         (int)((current & PMU_VOUT_BIT) != 0),
+         (uint64)sequence,
+         (uint64)events);
 }
 
 static int
@@ -354,13 +369,6 @@ vout_power_on(void)
  * ------------------------------------------------
  * Resets
  * ------------------------------------------------
- *
- * assert:
- *   bit 1 = reset activo
- *   bit 0 = reset liberado
- *
- * status:
- *   bit 1 = reset liberado
  */
 
 static int
@@ -405,10 +413,10 @@ reset_deassert_id(uint64 controller_base,
 
     if(status_value & mask){
       printf("hdmi: reset %s deasserted "
-             "assert=0x%x status=0x%x\n",
+             "assert=0x%lx status=0x%lx\n",
              name,
-             mmio_read32(assert_address),
-             status_value);
+             (uint64)mmio_read32(assert_address),
+             (uint64)status_value);
 
       return 0;
     }
@@ -417,18 +425,18 @@ reset_deassert_id(uint64 controller_base,
   }
 
   printf("hdmi: reset %s timeout "
-         "assert=0x%x status=0x%x mask=0x%x\n",
+         "assert=0x%lx status=0x%lx mask=0x%lx\n",
          name,
-         mmio_read32(assert_address),
-         mmio_read32(status_address),
-         mask);
+         (uint64)mmio_read32(assert_address),
+         (uint64)mmio_read32(status_address),
+         (uint64)mask);
 
   return -1;
 }
 
 /*
  * ------------------------------------------------
- * Diagnóstico de clocks
+ * Diagnostico de clocks
  * ------------------------------------------------
  */
 
@@ -508,16 +516,16 @@ dump_vout_clocks(void)
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_HDMI_SYS));
 
-  printf("  reset assert=0x%x status=0x%x\n",
-         mmio_read32(VOUT_CRG_BASE +
-                     VOUT_RESET_ASSERT_BASE),
-         mmio_read32(VOUT_CRG_BASE +
-                     VOUT_RESET_STATUS_BASE));
+  printf("  reset assert=0x%lx status=0x%lx\n",
+         (uint64)mmio_read32(
+           VOUT_CRG_BASE + VOUT_RESET_ASSERT_BASE),
+         (uint64)mmio_read32(
+           VOUT_CRG_BASE + VOUT_RESET_STATUS_BASE));
 }
 
 /*
  * ------------------------------------------------
- * Inicialización de clocks y resets
+ * Alimentacion local, clocks y resets
  * ------------------------------------------------
  */
 
@@ -526,18 +534,12 @@ vout_enable_clocks_and_resets(void)
 {
   printf("hdmi: configuring SYS VOUT clocks\n");
 
-  /*
-   * Divisor VOUT_AXI = 1.
-   */
   clock_divider_set(
     SYS_CRG_BASE + SYS_CLK_VOUT_AXI,
     0x7U,
     1U
   );
 
-  /*
-   * Camino NOC display.
-   */
   clock_gate_enable(
     SYS_CRG_BASE + SYS_CLK_NOC_DISP_AXI
   );
@@ -551,9 +553,6 @@ vout_enable_clocks_and_resets(void)
     return -1;
   }
 
-  /*
-   * Clocks superiores del dominio VOUT.
-   */
   clock_gate_enable(
     SYS_CRG_BASE + SYS_CLK_VOUT_SRC
   );
@@ -583,9 +582,6 @@ vout_enable_clocks_and_resets(void)
 
   printf("hdmi: configuring local VOUT clocks\n");
 
-  /*
-   * APB local: divisor 1.
-   */
   clock_divider_set(
     VOUT_CRG_BASE + VOUT_CLK_APB,
     0x1fU,
@@ -593,12 +589,7 @@ vout_enable_clocks_and_resets(void)
   );
 
   /*
-   * Pixel clock:
-   *
-   *   PLL2 = 1.188 GHz
-   *   1.188 GHz / 8 = 148.5 MHz
-   *
-   * El divisor del JH7110 es one-based, por lo que se escribe 8.
+   * PLL2 / 8 = 148,5 MHz.
    */
   clock_divider_set(
     VOUT_CRG_BASE + VOUT_CLK_DC_PIX_DIV,
@@ -606,10 +597,6 @@ vout_enable_clocks_and_resets(void)
     8U
   );
 
-  /*
-   * Selecciona el pixel clock interno como parent y activa
-   * los dos clocks de salida del DC8200.
-   */
   clock_parent0_enable(
     VOUT_CRG_BASE + VOUT_CLK_DC_PIX0
   );
@@ -618,9 +605,6 @@ vout_enable_clocks_and_resets(void)
     VOUT_CRG_BASE + VOUT_CLK_DC_PIX1
   );
 
-  /*
-   * Buses y core DC8200.
-   */
   clock_gate_enable(
     VOUT_CRG_BASE + VOUT_CLK_DC_AXI
   );
@@ -633,9 +617,6 @@ vout_enable_clocks_and_resets(void)
     VOUT_CRG_BASE + VOUT_CLK_DC_AHB
   );
 
-  /*
-   * Clocks HDMI.
-   */
   clock_gate_enable(
     VOUT_CRG_BASE + VOUT_CLK_HDMI_SYS
   );
@@ -650,9 +631,6 @@ vout_enable_clocks_and_resets(void)
 
   delay_ms(1);
 
-  /*
-   * Resets del DC8200.
-   */
   if(reset_deassert_id(
        VOUT_CRG_BASE,
        VOUT_RESET_ASSERT_BASE,
@@ -680,9 +658,6 @@ vout_enable_clocks_and_resets(void)
     return -1;
   }
 
-  /*
-   * Reset del transmisor HDMI.
-   */
   if(reset_deassert_id(
        VOUT_CRG_BASE,
        VOUT_RESET_ASSERT_BASE,
@@ -702,7 +677,7 @@ vout_enable_clocks_and_resets(void)
 
 /*
  * ------------------------------------------------
- * Patrón del framebuffer
+ * Patron de prueba
  * ------------------------------------------------
  */
 
@@ -716,39 +691,153 @@ framebuffer_test_pattern(void)
   for(uint32 y = 0; y < FB_HEIGHT; y++){
     for(uint32 x = 0; x < FB_WIDTH; x++){
 
-      /*
-       * Ocho barras verticales.
-       */
       if(x < FB_WIDTH / 8U)
-        color = 0x00ffffffU;  /* blanco */
+        color = 0x00ffffffU;  // blanco 
       else if(x < (FB_WIDTH * 2U) / 8U)
-        color = 0x00ffff00U;  /* amarillo */
+        color = 0x00ffff00U;  // amarillo 
       else if(x < (FB_WIDTH * 3U) / 8U)
-        color = 0x0000ffffU;  /* cian */
+        color = 0x0000ffffU;  // cian 
       else if(x < (FB_WIDTH * 4U) / 8U)
-        color = 0x0000ff00U;  /* verde */
+        color = 0x0000ff00U;  // verde 
       else if(x < (FB_WIDTH * 5U) / 8U)
-        color = 0x00ff00ffU;  /* magenta */
+        color = 0x00ff00ffU;  // magenta 
       else if(x < (FB_WIDTH * 6U) / 8U)
-        color = 0x00ff0000U;  /* rojo */
+        color = 0x00ff0000U;  // rojo 
       else if(x < (FB_WIDTH * 7U) / 8U)
-        color = 0x000000ffU;  /* azul */
+        color = 0x000000ffU;  // azul 
       else
-        color = 0x00000000U;  /* negro */
+        color = 0x00000000U;  // negro 
 
       framebuffer[y * FB_WIDTH + x] = color;
     }
   }
 
   /*
-   * Ordena las escrituras antes de activar el consumidor DMA.
-   *
-   * Esto no constituye por sí solo una limpieza explícita de caché;
-   * la coherencia del framebuffer se comprobará con el patrón.
+   * Ordena todas las escrituras antes de iniciar la limpieza.
    */
   asm volatile("fence rw, rw" ::: "memory");
 
   printf("hdmi: framebuffer pattern ready\n");
+}
+
+/*
+ * ------------------------------------------------
+ * Limpieza de caché del framebuffer
+ * ------------------------------------------------
+ *
+ * La operación reproduce el mecanismo utilizado por Linux para la version 
+ * de la placa vf2:
+ *
+ *   1. alinear el inicio hacia abajo a 64 bytes;
+ *   2. recorrer cada línea;
+ *   3. escribir su dirección física en CCACHE_FLUSH64;
+ *   4. ejecutar una barrera al terminar.
+ */
+
+static int
+framebuffer_cache_clean(void)
+{
+  uint64 start;
+  uint64 end;
+  uint64 line;
+  uint64 index;
+  uint64 line_count;
+  uint32 config;
+  uint32 wayenable;
+
+  start =
+    ((uint64)FRAMEBUFFER_PA) &
+    ~((uint64)CCACHE_LINE_SIZE - 1U);
+
+  end =
+    ((uint64)FRAMEBUFFER_PA +
+     FB_USED_SIZE +
+     CCACHE_LINE_SIZE - 1U) &
+    ~((uint64)CCACHE_LINE_SIZE - 1U);
+
+  line_count =
+    (end - start) / CCACHE_LINE_SIZE;
+
+  printf("hdmi: probing CCACHE at %p\n",
+         (void *)(uint64)CCACHE_BASE);
+
+  /*
+   * Si CCACHE no está mapeado, el fallo aparecerá aquí
+   * como load page fault o load access fault.
+   */
+  config =
+    mmio_read32(CCACHE_BASE + 0x0000);
+
+  wayenable =
+    mmio_read32(CCACHE_BASE + 0x0008);
+
+  printf("hdmi: CCACHE config=0x%lx wayenable=0x%lx\n",
+         (uint64)config,
+         (uint64)wayenable);
+
+  printf("hdmi: cleaning framebuffer cache\n");
+
+  printf("hdmi: cache range start=%p end=%p\n",
+         (void *)start,
+         (void *)end);
+
+  printf("hdmi: cache lines=%d line-size=%d\n",
+         (int)line_count,
+         (int)CCACHE_LINE_SIZE);
+
+  asm volatile("fence iorw, iorw" ::: "memory");
+
+  /*
+   * Primera línea por separado para determinar si el acceso
+   * al registro FLUSH64 regresa.
+   */
+  printf("hdmi: FLUSH64 first line=%p register=%p\n",
+         (void *)start,
+         (void *)(uint64)(CCACHE_BASE + CCACHE_FLUSH64));
+
+  mmio_write64_relaxed(
+    CCACHE_BASE + CCACHE_FLUSH64,
+    start
+  );
+
+  asm volatile("fence iorw, iorw" ::: "memory");
+
+  printf("hdmi: first FLUSH64 completed\n");
+
+  /*
+   * La primera línea ya fue limpiada.
+   */
+  line = start + CCACHE_LINE_SIZE;
+  index = 1;
+
+  for(;
+      line < end;
+      line += CCACHE_LINE_SIZE, index++){
+
+    mmio_write64_relaxed(
+      CCACHE_BASE + CCACHE_FLUSH64,
+      line
+    );
+
+    /*
+     * Diagnóstico cada 4096 líneas, aproximadamente
+     * cada 256 KiB de framebuffer.
+     */
+    if((index & 0xfffU) == 0){
+      asm volatile("fence iorw, iorw" ::: "memory");
+
+      printf("hdmi: cache progress %d/%d line=%p\n",
+             (int)index,
+             (int)line_count,
+             (void *)line);
+    }
+  }
+
+  asm volatile("fence iorw, iorw" ::: "memory");
+
+  printf("hdmi: framebuffer cache clean completed\n");
+
+  return 0;
 }
 
 /*
@@ -780,9 +869,6 @@ dc8200_configure_1080p(void)
   mmio_write32(DC8200_BASE + 0x1810,
                0x04380780);
 
-  /*
-   * Dirección y stride del framebuffer.
-   */
   mmio_write32(DC8200_BASE + 0x1400,
                (uint32)FRAMEBUFFER_PA);
 
@@ -810,9 +896,6 @@ dc8200_configure_1080p(void)
   mmio_write32(DC8200_BASE + 0x1cc4,
                0x00030000);
 
-  /*
-   * Configuración del panel/capa primaria.
-   */
   mmio_write32(DC8200_BASE + 0x1540,
                0x00050c1a);
 
@@ -913,7 +996,7 @@ dc8200_configure_1080p(void)
                0x00011b25);
 
   /*
-   * Commit de la configuración.
+   * Commit.
    */
   mmio_write32(DC8200_BASE + 0x1ccc,
                0x00000001);
@@ -955,23 +1038,21 @@ dc8200_readback(void)
   commit =
     mmio_read32(DC8200_BASE + 0x1ccc);
 
-  printf("hdmi: DC8200 revision=0x%x chip_id=0x%x\n",
-         revision,
-         chip_id);
+  printf("hdmi: DC8200 revision=0x%lx chip_id=0x%lx\n",
+         (uint64)revision,
+         (uint64)chip_id);
 
   printf("hdmi: DC8200 readback "
-         "fb=0x%x stride=0x%x "
-         "h=0x%x v=0x%x commit=0x%x\n",
-         framebuffer_address,
-         stride,
-         horizontal,
-         vertical,
-         commit);
+         "fb=0x%lx stride=0x%lx\n",
+         (uint64)framebuffer_address,
+         (uint64)stride);
 
-  /*
-   * El registro de commit puede limpiarse automáticamente,
-   * por lo que no se verifica su valor.
-   */
+  printf("hdmi: DC8200 timings "
+         "h=0x%lx v=0x%lx commit=0x%lx\n",
+         (uint64)horizontal,
+         (uint64)vertical,
+         (uint64)commit);
+
   if(framebuffer_address != (uint32)FRAMEBUFFER_PA){
     printf("hdmi: DC8200 framebuffer address mismatch\n");
     return -1;
@@ -994,9 +1075,6 @@ dc8200_readback(void)
  * ------------------------------------------------
  * HDMI TX
  * ------------------------------------------------
- *
- * Los registros lógicos HDMI están separados físicamente
- * cuatro bytes.
  */
 
 static uint32
@@ -1024,10 +1102,6 @@ struct hdmi_reg_value {
   uint32 value;
 };
 
-/*
- * Tabla oficial para 1920x1080p60 usando la rama
- * de referencia que no define REF_CLK_27M.
- */
 static const struct hdmi_reg_value
 hdmi_pll_1080p60[] = {
   {0x1a0, 0x01},
@@ -1061,9 +1135,6 @@ hdmi_tx_ctrl_1080p(void)
    */
   hdmi_write(0x0a7, 16);
 
-  /*
-   * Modo normal; 0 sería BIST.
-   */
   hdmi_write(0x00c9, 0x10);
 }
 
@@ -1077,9 +1148,6 @@ hdmi_wait_pll_lock(void)
 
   start = hdmi_read_time();
 
-  /*
-   * Timeout de 500 ms.
-   */
   timeout_ticks =
     ((uint64)JH7110_TIMEBASE_HZ * 500U) / 1000U;
 
@@ -1089,9 +1157,9 @@ hdmi_wait_pll_lock(void)
 
     if((prepll & 1U) && (postpll & 1U)){
       printf("hdmi: PLL locked "
-             "prepll=0x%x postpll=0x%x\n",
-             prepll,
-             postpll);
+             "prepll=0x%lx postpll=0x%lx\n",
+             (uint64)prepll,
+             (uint64)postpll);
 
       return 0;
     }
@@ -1101,9 +1169,9 @@ hdmi_wait_pll_lock(void)
   postpll = hdmi_read(0x1af);
 
   printf("hdmi: PLL lock timeout "
-         "prepll=0x%x postpll=0x%x\n",
-         prepll,
-         postpll);
+         "prepll=0x%lx postpll=0x%lx\n",
+         (uint64)prepll,
+         (uint64)postpll);
 
   return -1;
 }
@@ -1112,16 +1180,18 @@ static void
 hdmi_pll_dump(void)
 {
   printf("hdmi: PLL readback "
-         "1a0=%x 1aa=%x 1a1=%x 1a2=%x "
-         "1a3=%x 1a4=%x 1a5=%x 1a6=%x\n",
-         hdmi_read(0x1a0),
-         hdmi_read(0x1aa),
-         hdmi_read(0x1a1),
-         hdmi_read(0x1a2),
-         hdmi_read(0x1a3),
-         hdmi_read(0x1a4),
-         hdmi_read(0x1a5),
-         hdmi_read(0x1a6));
+         "1a0=%lx 1aa=%lx 1a1=%lx 1a2=%lx\n",
+         (uint64)hdmi_read(0x1a0),
+         (uint64)hdmi_read(0x1aa),
+         (uint64)hdmi_read(0x1a1),
+         (uint64)hdmi_read(0x1a2));
+
+  printf("hdmi: PLL readback "
+         "1a3=%lx 1a4=%lx 1a5=%lx 1a6=%lx\n",
+         (uint64)hdmi_read(0x1a3),
+         (uint64)hdmi_read(0x1a4),
+         (uint64)hdmi_read(0x1a5),
+         (uint64)hdmi_read(0x1a6));
 }
 
 static int
@@ -1132,10 +1202,6 @@ hdmi_enable_1080p(void)
 
   printf("hdmi: programming HDMI TX for 1080p60\n");
 
-  /*
-   * Habilita la lógica de detección/control utilizada
-   * por el driver StarFive.
-   */
   control_1b0 = hdmi_read(0x1b0);
   control_1b0 |= 0x04;
 
@@ -1143,13 +1209,10 @@ hdmi_enable_1080p(void)
   hdmi_write(0x1cc, 0x0f);
 
   /*
-   * PHY apagado durante la programación.
+   * PHY apagado mientras se programa.
    */
   hdmi_write(0x000, 0x63);
 
-  /*
-   * Programa el PLL.
-   */
   count =
     sizeof(hdmi_pll_1080p60) /
     sizeof(hdmi_pll_1080p60[0]);
@@ -1159,9 +1222,6 @@ hdmi_enable_1080p(void)
                hdmi_pll_1080p60[i].value);
   }
 
-  /*
-   * Programa VIC, formato y modo normal.
-   */
   hdmi_tx_ctrl_1080p();
 
   asm volatile("fence iorw, iorw" ::: "memory");
@@ -1169,14 +1229,11 @@ hdmi_enable_1080p(void)
   hdmi_pll_dump();
 
   printf("hdmi: control readback "
-         "1b0=0x%x 1cc=0x%x 1cd=0x%x\n",
-         hdmi_read(0x1b0),
-         hdmi_read(0x1cc),
-         hdmi_read(0x1cd));
+         "1b0=0x%lx 1cc=0x%lx 1cd=0x%lx\n",
+         (uint64)hdmi_read(0x1b0),
+         (uint64)hdmi_read(0x1cc),
+         (uint64)hdmi_read(0x1cd));
 
-  /*
-   * Espera a que ambos PLL indiquen lock.
-   */
   if(hdmi_wait_pll_lock() < 0)
     return -1;
 
@@ -1187,18 +1244,11 @@ hdmi_enable_1080p(void)
   hdmi_write(0x1be, 0x70);
 
   /*
-   * PHY ON.
+   * PHY y TMDS.
    */
   hdmi_write(0x000, 0x61);
-
-  /*
-   * TMDS ON.
-   */
   hdmi_write(0x1b2, 0x8f);
 
-  /*
-   * El driver StarFive espera 50 ms después de habilitar TMDS.
-   */
   delay_ms(50);
 
   /*
@@ -1210,13 +1260,15 @@ hdmi_enable_1080p(void)
   asm volatile("fence iorw, iorw" ::: "memory");
 
   printf("hdmi: PHY/TMDS readback "
-         "phy=0x%x ldo=0x%x serializer=0x%x "
-         "tmds=0x%x sync=0x%x\n",
-         hdmi_read(0x000),
-         hdmi_read(0x1b4),
-         hdmi_read(0x1be),
-         hdmi_read(0x1b2),
-         hdmi_read(0x0ce));
+         "phy=0x%lx ldo=0x%lx\n",
+         (uint64)hdmi_read(0x000),
+         (uint64)hdmi_read(0x1b4));
+
+  printf("hdmi: PHY/TMDS readback "
+         "serializer=0x%lx tmds=0x%lx sync=0x%lx\n",
+         (uint64)hdmi_read(0x1be),
+         (uint64)hdmi_read(0x1b2),
+         (uint64)hdmi_read(0x0ce));
 
   printf("hdmi: PHY, TMDS and data sync enabled\n");
 
@@ -1234,16 +1286,20 @@ hdmi_init(void)
 {
   printf("\n");
   printf("========================================\n");
-  printf(" JH7110 HDMI DRIVER V4 - 1080p60 TEST\n");
+  printf(" JH7110 HDMI DRIVER - CACHE CLEAN\n");
   printf("========================================\n");
 
-  printf("hdmi: framebuffer=%p size=0x%lx "
-         "resolution=%dx%d stride=%d\n",
+  printf("hdmi: framebuffer=%p size=0x%lx\n",
          (void *)(uint64)FRAMEBUFFER_PA,
-         (uint64)FRAMEBUFFER_SIZE,
+         (uint64)FRAMEBUFFER_SIZE);
+
+  printf("hdmi: resolution=%d x %d\n",
          (int)FB_WIDTH,
-         (int)FB_HEIGHT,
-         (int)FB_STRIDE);
+         (int)FB_HEIGHT);
+
+  printf("hdmi: stride=%d used-bytes=0x%lx\n",
+         (int)FB_STRIDE,
+         (uint64)FB_USED_SIZE);
 
   /*
    * 1. Alimentación.
@@ -1262,12 +1318,19 @@ hdmi_init(void)
   }
 
   /*
-   * 3. Patrón en memoria.
+   * 3. Dibuja el patrón usando la CPU.
    */
   framebuffer_test_pattern();
 
   /*
-   * 4. Controlador de pantalla.
+   * 4. Publica el contenido en RAM antes de habilitar el DC8200.
+   *
+   * Este es el cambio principal de la version actual.
+   */
+  framebuffer_cache_clean();
+
+  /*
+   * 5. Controlador de pantalla.
    */
   dc8200_configure_1080p();
 
@@ -1277,7 +1340,7 @@ hdmi_init(void)
   }
 
   /*
-   * 5. Transmisor HDMI.
+   * 6. Transmisor HDMI.
    */
   if(hdmi_enable_1080p() < 0){
     printf("hdmi: initialization failed at HDMI PLL\n");
@@ -1285,6 +1348,6 @@ hdmi_init(void)
   }
 
   printf("========================================\n");
-  printf(" HDMI V4 INITIALIZATION COMPLETED\n");
+  printf(" HDMI INITIALIZATION COMPLETED\n");
   printf("========================================\n");
 }

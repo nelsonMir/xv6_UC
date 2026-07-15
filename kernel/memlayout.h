@@ -81,6 +81,10 @@
 
 // VisionFive 2 / JH7110 display subsystem
 
+// SiFive/JH7110 composable L2 cache controller
+#define CCACHE_BASE      0x02010000L
+#define CCACHE_SIZE      0x00004000L
+
 #define DC8200_BASE       0x29400000L
 #define DC8200_SIZE       0x00010000L
 

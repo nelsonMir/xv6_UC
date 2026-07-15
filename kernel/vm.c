@@ -34,6 +34,12 @@ pagetable_t kvmmake(void)
 
   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
+  // JH7110/SiFive L2 cache controller.
+  kvmmap(kpgtbl,
+       CCACHE_BASE,
+       CCACHE_BASE,
+       CCACHE_SIZE,
+       PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, MMC1, MMC1, MMC1_SIZE, PTE_R | PTE_W | PTE_A | PTE_D);
     // JH7110 video subsystem MMIO
   kvmmap(kpgtbl, DC8200_BASE, DC8200_BASE, DC8200_SIZE,
@@ -57,6 +63,7 @@ pagetable_t kvmmake(void)
        FRAMEBUFFER_PA,
        FRAMEBUFFER_SIZE,
        PTE_R | PTE_W | PTE_A | PTE_D);
+
   //fin mapeo hdmi 
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 

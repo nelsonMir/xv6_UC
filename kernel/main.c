@@ -45,14 +45,18 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
     printf("kvminithart done\r\n");
-    hdmi_init();
-    printf("hdmi init returned\r\n");
     procinit();      // process table
     printf("procinit done\r\n");
     trapinit();      // trap vectors
     printf("trapinit done\r\n");
     trapinithart();  // install kernel trap vector
     printf("trapinit hart done\r\n");
+    /*
+    * Ahora los fallos MMIO producirán un diagnóstico
+    * en lugar de parecer un bloqueo silencioso.
+    */
+    hdmi_init();
+    printf("hdmi init returned\r\n");
     plicinit();      // set up interrupt controller
     printf("plicinit done\r\n");
     plicinithart();  // ask PLIC for device interrupts
