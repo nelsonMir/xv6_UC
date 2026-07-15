@@ -35,6 +35,29 @@ pagetable_t kvmmake(void)
   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W | PTE_A | PTE_D);
   kvmmap(kpgtbl, MMC1, MMC1, MMC1_SIZE, PTE_R | PTE_W | PTE_A | PTE_D);
+    // JH7110 video subsystem MMIO
+  kvmmap(kpgtbl, DC8200_BASE, DC8200_BASE, DC8200_SIZE,
+         PTE_R | PTE_W | PTE_A | PTE_D);
+
+  kvmmap(kpgtbl, HDMI_TX_BASE, HDMI_TX_BASE, HDMI_TX_SIZE,
+         PTE_R | PTE_W | PTE_A | PTE_D);
+
+  kvmmap(kpgtbl, VOUT_CRG_BASE, VOUT_CRG_BASE, VOUT_CRG_SIZE,
+         PTE_R | PTE_W | PTE_A | PTE_D);
+
+  kvmmap(kpgtbl, SYS_CRG_BASE, SYS_CRG_BASE, SYS_CRG_SIZE,
+         PTE_R | PTE_W | PTE_A | PTE_D);
+
+  kvmmap(kpgtbl, JH7110_PMU_BASE, JH7110_PMU_BASE, JH7110_PMU_SIZE,
+         PTE_R | PTE_W | PTE_A | PTE_D);
+
+  //framebuffer 
+  kvmmap(kpgtbl,
+       FRAMEBUFFER_PA,
+       FRAMEBUFFER_PA,
+       FRAMEBUFFER_SIZE,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+  //fin mapeo hdmi 
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X | PTE_A | PTE_D);

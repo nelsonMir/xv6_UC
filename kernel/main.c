@@ -45,6 +45,8 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
     printf("kvminithart done\r\n");
+    hdmi_init();
+    printf("hdmi init returned\r\n");
     procinit();      // process table
     printf("procinit done\r\n");
     trapinit();      // trap vectors

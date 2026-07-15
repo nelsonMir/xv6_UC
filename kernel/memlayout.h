@@ -41,7 +41,13 @@
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.
 #define KERNBASE 0x80000000L
-#define PHYSTOP (KERNBASE + 128*1024*1024)
+#define FRAMEBUFFER_SIZE  (8*1024*1024L)
+#define FRAMEBUFFER_PA    0x87800000L
+
+/*
+ * El allocator solo puede utilizar memoria inferior al framebuffer.
+ */
+#define PHYSTOP FRAMEBUFFER_PA
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
@@ -71,3 +77,21 @@
 // VisionFive 2 / JH7110: microSD controller
 #define MMC1       0x16020000L
 #define MMC1_SIZE  0x10000L
+
+
+// VisionFive 2 / JH7110 display subsystem
+
+#define DC8200_BASE       0x29400000L
+#define DC8200_SIZE       0x00010000L
+
+#define HDMI_TX_BASE      0x29590000L
+#define HDMI_TX_SIZE      0x00010000L
+
+#define VOUT_CRG_BASE     0x295c0000L
+#define VOUT_CRG_SIZE     0x00010000L
+
+#define SYS_CRG_BASE      0x13020000L
+#define SYS_CRG_SIZE      0x00010000L
+
+#define JH7110_PMU_BASE   0x17030000L
+#define JH7110_PMU_SIZE   0x00010000L
