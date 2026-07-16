@@ -150,6 +150,16 @@ void            usertrapret(void);
 
 // hdmi.c
 void hdmi_init(void);
+int               hdmi_is_ready(void);
+volatile uint32*  hdmi_framebuffer_ptr(void);
+void              hdmi_cache_clean_full(void);
+void              hdmi_cache_clean_rect(uint32, uint32, uint32, uint32);
+
+// fbconsole.c
+void              fbconsole_init(void);
+int               fbconsole_is_ready(void);
+void              fbconsole_clear(void);
+void              fbconsole_putc(int);
 
 // uart.c
 void            uartinit(void);

@@ -36,12 +36,19 @@ void
 consputc(int c)
 {
    if(c == BACKSPACE){
-    // retrocede, borra, retrocede
+    // Uart necesita la secuencia de retroceder, borrar, retroceder otra vez
     uartputc_sync('\b');
     uartputc_sync(' ');
     uartputc_sync('\b');
+
+    //en cambio el framebuffer solo necesita retroceder
+    fbconsole_putc('\b');
   } else {
+
+    //la salida de momento va a ser simultanea, salir por el UART y por el HDMI 
     uartputc_sync(c);
+
+    fbconsole_putc(c);
   }
 }
 
@@ -71,7 +78,10 @@ consolewrite(int user_src, uint64 src, int n)
     char c;
     if(either_copyin(&c, user_src, src+i, 1) == -1)
       break;
-    uartputc_sync(c);
+    //uartputc_sync(c);
+
+    //Se usa esta funcion para que el caracter salga por UART y por el hdmi
+    consputc((uchar)c);
   }
 
   return i;

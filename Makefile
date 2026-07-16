@@ -71,6 +71,7 @@ OBJS = \
   $(K)/schedulers.o \
   $(K)/initcode_blob.o \
   $(K)/hdmi.o \
+  $(K)/fbconsole.o \
   #$(K)/fsimg_blob.o          # <— A PRUEBA DE BALAS: define fs_img y fs_img_len
 
 # Librerías de usuario

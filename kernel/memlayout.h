@@ -44,9 +44,14 @@
 #define FRAMEBUFFER_SIZE  (8*1024*1024L)
 #define FRAMEBUFFER_PA    0x87800000L
 
-/*
- * El allocator solo puede utilizar memoria inferior al framebuffer.
- */
+#define HDMI_FB_WIDTH             1920U
+#define HDMI_FB_HEIGHT            1080U
+#define HDMI_FB_BYTES_PER_PIXEL   4U
+
+#define HDMI_FB_STRIDE \
+  (HDMI_FB_WIDTH * HDMI_FB_BYTES_PER_PIXEL)
+
+//El allocator solo puede utilizar memoria inferior al framebuffer.
 #define PHYSTOP FRAMEBUFFER_PA
 
 // map the trampoline page to the highest address,

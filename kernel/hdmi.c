@@ -5,19 +5,20 @@
 #include "defs.h"
 
 /*
- * ================================================================
- * StarFive JH7110 HDMI driver 
- * ================================================================
- *
- * Resolución:
- *   1920x1080, 60 Hz
- *
- * Formato:
- *   32 bits por píxel
- *
- * Cambio:
- *   limpieza explícita del framebuffer mediante el controlador
- *   SiFive/JH7110 CCACHE antes de que el DC8200 empiece a leerlo.
+  ================================================================
+  StarFive JH7110 HDMI driver 
+  ================================================================
+
+  Responsabilidades de este fichero:
+    - encender el dominio de alimentación VOUT
+    - habilitar clocks y liberar resets
+    - preparar un framebuffer negro
+    - limpiar la caché L2 mediante CCACHE
+    - configurar DC8200 para 1920x1080p60
+    - configurar HDMI TX, PLL, PHY y TMDS
+ 
+  La representación de caracteres, cursor, backspace y scroll
+  pertenecen a fbconsole.c, no a este fichero.
  */
 
 /*
@@ -30,6 +31,7 @@
 #define FB_HEIGHT                1080U
 #define FB_BYTES_PER_PIXEL       4U
 #define FB_STRIDE                (FB_WIDTH * FB_BYTES_PER_PIXEL)
+
 
 #define FB_USED_SIZE             \
   ((uint64)FB_STRIDE * (uint64)FB_HEIGHT)
@@ -133,6 +135,8 @@
 static volatile uint32 *const framebuffer =
   (volatile uint32 *)(uint64)FRAMEBUFFER_PA;
 
+static volatile int hdmi_ready;
+
 /*
  * ------------------------------------------------
  * Accesos MMIO
@@ -228,6 +232,8 @@ delay_ms(uint32 milliseconds)
   while((hdmi_read_time() - start) < ticks)
     asm volatile("nop");
 }
+
+
 
 /*
  * ------------------------------------------------
@@ -681,7 +687,7 @@ vout_enable_clocks_and_resets(void)
  * ------------------------------------------------
  */
 
-static void
+/* static void
 framebuffer_test_pattern(void)
 {
   uint32 color;
@@ -712,29 +718,40 @@ framebuffer_test_pattern(void)
     }
   }
 
-  /*
-   * Ordena todas las escrituras antes de iniciar la limpieza.
-   */
+  
+    Ordena todas las escrituras antes de iniciar la limpieza.
+   
   asm volatile("fence rw, rw" ::: "memory");
 
   printf("hdmi: framebuffer pattern ready\n");
+} */
+
+
+static void
+framebuffer_clear(uint32 color)
+{
+  uint64 pixel_count;
+
+  pixel_count =
+    (uint64)HDMI_FB_WIDTH *
+    (uint64)HDMI_FB_HEIGHT;
+
+  for(uint64 i = 0; i < pixel_count; i++)
+    framebuffer[i] = color;
+
+  asm volatile("fence rw, rw" ::: "memory");
 }
 
 /*
  * ------------------------------------------------
  * Limpieza de caché del framebuffer
  * ------------------------------------------------
- *
- * La operación reproduce el mecanismo utilizado por Linux para la version 
- * de la placa vf2:
- *
- *   1. alinear el inicio hacia abajo a 64 bytes;
- *   2. recorrer cada línea;
- *   3. escribir su dirección física en CCACHE_FLUSH64;
- *   4. ejecutar una barrera al terminar.
+    No se utiliza ya, se usaba inicialmente para limpiar pero se sustityo 
+    por una version reutilizable mas abajo
  */
 
-static int
+
+/*static int
 framebuffer_cache_clean(void)
 {
   uint64 start;
@@ -761,10 +778,10 @@ framebuffer_cache_clean(void)
   printf("hdmi: probing CCACHE at %p\n",
          (void *)(uint64)CCACHE_BASE);
 
-  /*
-   * Si CCACHE no está mapeado, el fallo aparecerá aquí
-   * como load page fault o load access fault.
-   */
+  
+    Si CCACHE no está mapeado, el fallo aparecerá aquí
+    como load page fault o load access fault.
+   
   config =
     mmio_read32(CCACHE_BASE + 0x0000);
 
@@ -787,10 +804,10 @@ framebuffer_cache_clean(void)
 
   asm volatile("fence iorw, iorw" ::: "memory");
 
-  /*
-   * Primera línea por separado para determinar si el acceso
-   * al registro FLUSH64 regresa.
-   */
+  
+    Primera línea por separado para determinar si el acceso
+    al registro FLUSH64 regresa.
+   
   printf("hdmi: FLUSH64 first line=%p register=%p\n",
          (void *)start,
          (void *)(uint64)(CCACHE_BASE + CCACHE_FLUSH64));
@@ -804,9 +821,9 @@ framebuffer_cache_clean(void)
 
   printf("hdmi: first FLUSH64 completed\n");
 
-  /*
-   * La primera línea ya fue limpiada.
-   */
+  
+   La primera línea ya fue limpiada.
+   
   line = start + CCACHE_LINE_SIZE;
   index = 1;
 
@@ -819,10 +836,10 @@ framebuffer_cache_clean(void)
       line
     );
 
-    /*
-     * Diagnóstico cada 4096 líneas, aproximadamente
-     * cada 256 KiB de framebuffer.
-     */
+    
+      Diagnóstico cada 4096 líneas, aproximadamente
+      cada 256 KiB de framebuffer.
+     
     if((index & 0xfffU) == 0){
       asm volatile("fence iorw, iorw" ::: "memory");
 
@@ -838,7 +855,192 @@ framebuffer_cache_clean(void)
   printf("hdmi: framebuffer cache clean completed\n");
 
   return 0;
+} */
+
+
+/*
+ * Limpia un rango físico usando el registro FLUSH64
+ * del controlador SiFive CCACHE.
+ */
+static void
+ccache_clean_range(uint64 physical_start, uint64 size)
+{
+  uint64 start;
+  uint64 end;
+  uint64 line;
+
+  if(size == 0)
+    return;
+
+  /*
+   * Alinea el comienzo hacia abajo y el final hacia arriba
+   * al tamaño de línea de caché.
+   */
+  start =
+    physical_start &
+    ~((uint64)CCACHE_LINE_SIZE - 1U);
+
+  end =
+    (physical_start +
+     size +
+     CCACHE_LINE_SIZE - 1U) &
+    ~((uint64)CCACHE_LINE_SIZE - 1U);
+
+  /*
+   * Las escrituras de la CPU deben haber sido emitidas antes
+   * de ordenar el writeback de las líneas.
+   */
+  asm volatile("fence iorw, iorw" ::: "memory");
+
+  for(line = start;
+      line < end;
+      line += CCACHE_LINE_SIZE){
+    mmio_write64_relaxed(CCACHE_BASE + CCACHE_FLUSH64, line);
+  }
+
+  /*
+   * No se permite activar o continuar el consumidor DMA
+   * hasta haber terminado todas las limpiezas.
+   */
+  asm volatile("fence iorw, iorw" ::: "memory");
 }
+
+/*
+  Limpia el framebuffer completo.
+ 
+  Se utiliza después de borrar inicialmente toda la pantalla.
+ */
+
+ /*
+static void
+framebuffer_cache_clean_full(void)
+{
+  uint64 line_count;
+
+  line_count =
+    (FB_USED_SIZE +
+     CCACHE_LINE_SIZE - 1U) /
+    CCACHE_LINE_SIZE;
+
+  printf("hdmi: cleaning complete framebuffer cache\n");
+
+  printf("hdmi: full cache range start=%p size=0x%lx "
+         "lines=%d\n",
+         (void *)(uint64)FRAMEBUFFER_PA,
+         (uint64)FB_USED_SIZE,
+         (int)line_count);
+
+  ccache_clean_range(
+    (uint64)FRAMEBUFFER_PA,
+    FB_USED_SIZE
+  );
+
+  printf("hdmi: complete framebuffer cache clean finished\n");
+} */
+
+/*
+  Limpia únicamente un rectángulo del framebuffer.
+ 
+  Una región rectangular no es contigua en memoria porque cada
+  línea está separada por FB_STRIDE. Por eso se limpia fila por fila.
+ */
+/*
+static void
+framebuffer_cache_clean_rect(uint32 x,
+                             uint32 y,
+                             uint32 width,
+                             uint32 height)
+{
+  uint64 row_address;
+  uint64 row_size;
+
+  if(x >= FB_WIDTH || y >= FB_HEIGHT)
+    return;
+
+  if(width == 0 || height == 0)
+    return;
+
+  if(x + width > FB_WIDTH)
+    width = FB_WIDTH - x;
+
+  if(y + height > FB_HEIGHT)
+    height = FB_HEIGHT - y;
+
+  row_size =
+    (uint64)width *
+    FB_BYTES_PER_PIXEL;
+
+  for(uint32 row = 0; row < height; row++){
+    row_address =
+      (uint64)FRAMEBUFFER_PA +
+      ((uint64)(y + row) * FB_STRIDE) +
+      ((uint64)x * FB_BYTES_PER_PIXEL);
+
+    ccache_clean_range(
+      row_address,
+      row_size
+    );
+  }
+} */
+
+/*
+ * ================================================================
+ * API de framebuffer y mantenimiento de caché
+ * ================================================================
+ */
+
+volatile uint32 *
+hdmi_framebuffer_ptr(void)
+{
+  return framebuffer;
+}
+
+int
+hdmi_is_ready(void)
+{
+  return hdmi_ready != 0;
+}
+
+void
+hdmi_cache_clean_rect(uint32 x,
+                      uint32 y,
+                      uint32 width,
+                      uint32 height)
+{
+  uint64 row_address;
+  uint64 row_size;
+
+  if(x >= HDMI_FB_WIDTH || y >= HDMI_FB_HEIGHT)
+    return;
+
+  if(width == 0 || height == 0)
+    return;
+
+  if(x + width > HDMI_FB_WIDTH)
+    width = HDMI_FB_WIDTH - x;
+
+  if(y + height > HDMI_FB_HEIGHT)
+    height = HDMI_FB_HEIGHT - y;
+
+  row_size = (uint64)width * HDMI_FB_BYTES_PER_PIXEL;
+
+  for(uint32 row = 0; row < height; row++){
+    row_address =
+      (uint64)FRAMEBUFFER_PA +
+      ((uint64)(y + row) * HDMI_FB_STRIDE) +
+      ((uint64)x * HDMI_FB_BYTES_PER_PIXEL);
+
+    ccache_clean_range(row_address, row_size);
+  }
+}
+
+void
+hdmi_cache_clean_full(void)
+{
+  ccache_clean_range((uint64)FRAMEBUFFER_PA, FB_USED_SIZE);
+}
+
+
 
 /*
  * ------------------------------------------------
@@ -1275,6 +1477,8 @@ hdmi_enable_1080p(void)
   return 0;
 }
 
+
+
 /*
  * ------------------------------------------------
  * Entrada pública
@@ -1284,6 +1488,7 @@ hdmi_enable_1080p(void)
 void
 hdmi_init(void)
 {
+  hdmi_ready = 0;
   printf("\n");
   printf("========================================\n");
   printf(" JH7110 HDMI DRIVER - CACHE CLEAN\n");
@@ -1318,19 +1523,28 @@ hdmi_init(void)
   }
 
   /*
-   * 3. Dibuja el patrón usando la CPU.
-   */
+   
   framebuffer_test_pattern();
 
-  /*
-   * 4. Publica el contenido en RAM antes de habilitar el DC8200.
-   *
-   * Este es el cambio principal de la version actual.
-   */
+  
   framebuffer_cache_clean();
 
+ 
+  dc8200_configure_1080p();
+
+  if(dc8200_readback() < 0){
+    printf("hdmi: initialization failed at DC8200\n");
+    return;
+  } */
+
   /*
-   * 5. Controlador de pantalla.
+   * El DC8200 no debe empezar a leer memoria antigua.
+   */
+  framebuffer_clear(0x00000000U);
+  hdmi_cache_clean_full();
+
+  /*
+   * 4. Controlador DC8200.
    */
   dc8200_configure_1080p();
 
@@ -1340,12 +1554,29 @@ hdmi_init(void)
   }
 
   /*
-   * 6. Transmisor HDMI.
+   * 5. Transmisor HDMI.
    */
   if(hdmi_enable_1080p() < 0){
     printf("hdmi: initialization failed at HDMI PLL\n");
     return;
   }
+
+  /*
+   * 6. Espera breve para que la salida de vídeo quede estable.
+   */
+  delay_ms(100);
+
+  /*
+   * 7. Actualización dinámica del framebuffer.
+   *
+   * Esta función dibuja el texto y limpia únicamente la región
+   * modificada.
+   */
+  //fbconsole_demo();
+
+  __sync_synchronize();
+  hdmi_ready = 1;
+  __sync_synchronize();
 
   printf("========================================\n");
   printf(" HDMI INITIALIZATION COMPLETED\n");

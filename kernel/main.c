@@ -51,12 +51,14 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("trapinit done\r\n");
     trapinithart();  // install kernel trap vector
     printf("trapinit hart done\r\n");
-    /*
-    * Ahora los fallos MMIO producirán un diagnóstico
-    * en lugar de parecer un bloqueo silencioso.
-    */
+    //Ahora los fallos MMIO producirán un diagnóstico en lugar de parecer un bloqueo silencioso, porque se inicializa 
+    //el hdmi antes de las interrupciones
     hdmi_init();
-    printf("hdmi init returned\r\n");
+    printf("hdmi init done\r\n");
+    //debe llamarse despues de inicializar el hdmi, porque sino no habria una salia de video funcional aun
+    fbconsole_init();
+    //esta sera la primera linea que debe aparecer en el hdmi 
+    printf("hdmi framebuffer console ready\r\n");
     plicinit();      // set up interrupt controller
     printf("plicinit done\r\n");
     plicinithart();  // ask PLIC for device interrupts
