@@ -51,48 +51,51 @@ static struct editor_state editor;
 
 //variable global para saber si hay cambios
 static int quit_pending;
-/*
- * Portapapeles interno del editor.
- * Ctrl+K corta una línea y Ctrl+U la pega.
- */
+
+//Portapapeles interno del editor
+//Ctrl+K corta una línea y Ctrl+U la pega
+ 
 static char clipboard[MAX_LINE_LENGTH];
 static int clipboard_length;
 
-/*
- * Prototipos de funciones
- */
+//variables para manejar el refresco de la pantalla (total o solo de la linea)
+static int full_refresh_needed = 1;
+static int line_refresh_needed = 0;
+static int line_refresh_y = 0;
+static int title_refresh_needed = 0;
+static int status_refresh_needed = 0;
+
+//Prototipos de funciones
+
 static void editor_set_status(char *message);
 static int editor_load_file(char *filename);
 static int editor_save_file(void);
 static void editor_cut_line(void);
 static void editor_paste_line(void);
 
-/*
- * Escribe una cadena completa sin depender de printf.
- */
+//Escribe una cadena completa sin depender de printf
 static void
 terminal_write(char *text)
 {
   write(1, text, strlen(text));
 }
 
-/*
- * Restaura la consola antes de regresar a la shell.
- */
+
+//Restaura la consola antes de regresar a la shell
+ 
 static void
 editor_cleanup(void)
 {
   term_cooked();
 
-  terminal_write("\x1b[0m");    // Restaurar atributos.
-  terminal_write("\x1b[?25h");  // Mostrar cursor.
-  terminal_write("\x1b[2J");    // Limpiar pantalla.
-  terminal_write("\x1b[H");     // Cursor arriba.
+  terminal_write("\x1b[0m");    // Restaurar atributos
+  terminal_write("\x1b[?25h");  // Mostrar cursor
+  terminal_write("\x1b[2J");    // Limpiar pantalla
+  terminal_write("\x1b[H");     // Cursor arriba
 }
 
-/*
- * Lee una tecla o una secuencia especial.
- */
+//Lee una tecla o una secuencia especial
+
 static int
 editor_read_key(void)
 {
@@ -193,12 +196,14 @@ static void editor_init(char *filename)
   editor.status[0] = '\0';
 }
 
-/*
- * Mantiene el cursor dentro de la ventana visible.
- */
-static void
+//Mantiene el cursor dentro de la ventana visible.
+
+static int
 editor_scroll(void)
 {
+  int old_row_offset = editor.row_offset;
+  int old_column_offset = editor.column_offset;
+
   int visible_rows = TEXT_BOTTOM - TEXT_TOP + 1;
   int visible_columns = SCREEN_COLS;
 
@@ -215,6 +220,9 @@ editor_scroll(void)
   if(editor.cursor_x >= editor.column_offset + visible_columns)
     editor.column_offset =
       editor.cursor_x - visible_columns + 1;
+
+  return old_row_offset != editor.row_offset ||
+         old_column_offset != editor.column_offset;
 }
 
 //imprime el estado del documento
@@ -290,15 +298,13 @@ editor_draw_help(void)
   terminal_write("\x1b[0m");
 }
 
-/*
- * Redibuja toda la pantalla.
- */
+//Redibuja toda la pantalla.
 static void
 editor_refresh_screen(void)
 {
   editor_scroll();
 
-  terminal_write("\x1b[?25l");
+  //terminal_write("\x1b[?25l");
   terminal_write("\x1b[H");
 
   editor_draw_title();
@@ -307,9 +313,9 @@ editor_refresh_screen(void)
   editor_draw_help();
 
   /*
-   * ANSI usa filas y columnas empezando en 1.
-   *
-   * La primera línea de texto está en la fila 2.
+    ANSI usa filas y columnas empezando en 1.
+   
+    La primera línea de texto está en la fila 2.
    */
   int screen_y =
     editor.cursor_y - editor.row_offset + TEXT_TOP;
@@ -319,7 +325,69 @@ editor_refresh_screen(void)
 
   printf("\x1b[%d;%dH", screen_y, screen_x);
 
-  terminal_write("\x1b[?25h");
+  //terminal_write("\x1b[?25h");
+}
+
+//funciones auxiliares para el refresco 
+static void
+editor_mark_modified(void)
+{
+  if(editor.modified == 0)
+    title_refresh_needed = 1;
+
+  editor.modified = 1;
+}
+
+static void
+editor_mark_line_dirty(int file_y)
+{
+  line_refresh_needed = 1;
+  line_refresh_y = file_y;
+}
+
+static void
+editor_refresh_title(void)
+{
+  printf("\x1b[1;1H");
+  editor_draw_title();
+}
+
+static void
+editor_refresh_status(void)
+{
+  printf("\x1b[%d;1H", TEXT_BOTTOM + 1);
+  editor_draw_status();
+}
+
+static void
+editor_refresh_line(int file_y)
+{
+  int screen_y = file_y - editor.row_offset + TEXT_TOP;
+
+  if(screen_y < TEXT_TOP || screen_y > TEXT_BOTTOM){
+    full_refresh_needed = 1;
+    return;
+  }
+
+  printf("\x1b[%d;1H", screen_y);
+  terminal_write("\x1b[2K");
+
+  if(file_y >= editor.line_count){
+    terminal_write("~");
+    return;
+  }
+
+  struct editor_line *line = &editor.lines[file_y];
+
+  int start = editor.column_offset;
+  int available = line->length - start;
+
+  if(available > 0){
+    if(available > SCREEN_COLS)
+      available = SCREEN_COLS;
+
+    write(1, line->text + start, available);
+  }
 }
 
 static void
@@ -394,7 +462,8 @@ editor_insert_character(int character)
   line->text[line->length] = '\0';
 
   editor.cursor_x++;
-  editor.modified = 1;
+  editor_mark_modified();
+  editor_mark_line_dirty(editor.cursor_y);
 }
 
 static void
@@ -406,9 +475,9 @@ editor_insert_newline(void)
   struct editor_line *current =
     &editor.lines[editor.cursor_y];
 
-  /*
-   * Desplazar las líneas posteriores.
-   */
+  
+  //Desplazar las líneas posteriores.
+  
   for(int i = editor.line_count;
       i > editor.cursor_y + 1;
       i--){
@@ -437,7 +506,8 @@ editor_insert_newline(void)
   editor.cursor_y++;
   editor.cursor_x = 0;
 
-  editor.modified = 1;
+  editor_mark_modified();
+  full_refresh_needed = 1;
 }
 
 static void
@@ -457,13 +527,13 @@ editor_backspace(void)
     line->text[line->length] = '\0';
 
     editor.cursor_x--;
-    editor.modified = 1;
+    editor_mark_modified();
+    editor_mark_line_dirty(editor.cursor_y);
     return;
   }
 
-  /*
-   * Al principio de una línea, unirla con la anterior.
-   */
+  //Al principio de una línea, unirla con la anterior
+  
   if(editor.cursor_y > 0){
     struct editor_line *previous =
       &editor.lines[editor.cursor_y - 1];
@@ -494,7 +564,8 @@ editor_backspace(void)
     editor.cursor_y--;
     editor.cursor_x = previous_length;
 
-    editor.modified = 1;
+    editor_mark_modified();
+    full_refresh_needed = 1;
   }
 }
 
@@ -514,13 +585,12 @@ editor_delete_character(void)
     line->length--;
     line->text[line->length] = '\0';
 
-    editor.modified = 1;
+    editor_mark_modified();
+    editor_mark_line_dirty(editor.cursor_y);
     return;
   }
 
-  /*
-   * Delete al final de la línea: unir con la siguiente.
-   */
+  //Delete al final de la línea: unir con la siguiente
   if(editor.cursor_y + 1 < editor.line_count){
     struct editor_line *next =
       &editor.lines[editor.cursor_y + 1];
@@ -546,22 +616,19 @@ editor_delete_character(void)
     }
 
     editor.line_count--;
-    editor.modified = 1;
+    editor_mark_modified();
+    full_refresh_needed = 1;
   }
 }
 
-/*
- * Corta la línea actual y la guarda en el portapapeles.
- */
+//Corta la línea actual y la guarda en el portapapeles
 static void
 editor_cut_line(void)
 {
   struct editor_line *line =
     &editor.lines[editor.cursor_y];
 
-  /*
-   * Guardar la línea actual en el portapapeles.
-   */
+  //Guardar la línea actual en el portapapeles
   clipboard_length = line->length;
 
   if(clipboard_length > 0){
@@ -575,23 +642,23 @@ editor_cut_line(void)
   clipboard[clipboard_length] = '\0';
 
   /*
-   * Si solamente existe una línea, se vacía,
-   * pero se mantiene el documento con una línea.
+    Si solamente existe una línea, se vacía,
+    pero se mantiene el documento con una línea
    */
   if(editor.line_count == 1){
     line->length = 0;
     line->text[0] = '\0';
 
     editor.cursor_x = 0;
-    editor.modified = 1;
+    
+    editor_mark_modified();
+    editor_mark_line_dirty(editor.cursor_y);
 
     editor_set_status("Linea cortada");
     return;
   }
 
-  /*
-   * Desplazar hacia arriba las líneas posteriores.
-   */
+  //Desplazar hacia arriba las líneas posteriores
   for(int i = editor.cursor_y;
       i < editor.line_count - 1;
       i++){
@@ -601,22 +668,22 @@ editor_cut_line(void)
   editor.line_count--;
 
   /*
-   * Si se eliminó la última línea, mover el cursor
-   * a la nueva última línea.
+    Si se eliminó la última línea, mover el cursor
+    a la nueva última línea
    */
   if(editor.cursor_y >= editor.line_count)
     editor.cursor_y = editor.line_count - 1;
 
   editor.cursor_x = 0;
-  editor.modified = 1;
+  editor_mark_modified();
+  full_refresh_needed = 1;
 
   editor_set_status("Linea cortada");
 }
 
-/*
- * Pega el contenido del portapapeles como una línea nueva
- * antes de la línea actual.
- */
+
+//Pega el contenido del portapapeles como una línea nueva
+//antes de la línea actual
 static void
 editor_paste_line(void)
 {
@@ -630,18 +697,14 @@ editor_paste_line(void)
     return;
   }
 
-  /*
-   * Desplazar hacia abajo la línea actual y las posteriores.
-   */
+  //Desplazar hacia abajo la línea actual y las posteriores
   for(int i = editor.line_count;
       i > editor.cursor_y;
       i--){
     editor.lines[i] = editor.lines[i - 1];
   }
 
-  /*
-   * Copiar el portapapeles a la nueva línea.
-   */
+  //Copiar el portapapeles a la nueva línea
   struct editor_line *line =
     &editor.lines[editor.cursor_y];
 
@@ -656,12 +719,12 @@ editor_paste_line(void)
 
   editor.line_count++;
 
-  /*
-   * Colocar el cursor al final de la línea pegada.
-   */
+  //Colocar el cursor al final de la línea pegada
+   
   editor.cursor_x = line->length;
 
-  editor.modified = 1;
+  editor_mark_modified();
+  full_refresh_needed = 1;
   editor_set_status("Linea pegada");
 }
 
@@ -673,26 +736,24 @@ static void editor_process_key(void)
     return;
 
   /*
-   * Si había una salida pendiente y el usuario pulsa otra tecla,
-   * se cancela la confirmación de salida.
+    Si había una salida pendiente y el usuario pulsa otra tecla,
+    se cancela la confirmación de salida
    */
   if(key != CTRL_KEY('x'))
     quit_pending = 0;
 
   switch(key){
 
-  /*
-   * Ctrl+O: guardar archivo.
-   */
+  //Ctrl+O: guardar archivo
   case CTRL_KEY('o'):
     if(editor_save_file() == 0)
       quit_pending = 0;
     break;
 
   /*
-   * Ctrl+X: salir.
-   *
-   * Si hay cambios sin guardar, obliga a pulsar Ctrl+X dos veces.
+    Ctrl+X: salir
+   
+    Si hay cambios sin guardar, obliga a pulsar Ctrl+X dos veces
    */
   case CTRL_KEY('x'):
     if(editor.modified && !quit_pending){
@@ -709,23 +770,17 @@ static void editor_process_key(void)
     exit(0);
     break;
 
-  /*
-   * Ctrl+K: cortar la línea actual.
-   */
+  //Ctrl+K: cortar la línea actual
   case CTRL_KEY('k'):
     editor_cut_line();
     break;
 
-  /*
-   * Ctrl+U: pegar la línea previamente cortada.
-   */
+  //Ctrl+U: pegar la línea previamente cortada
   case CTRL_KEY('u'):
     editor_paste_line();
     break;
 
-  /*
-   * Movimiento del cursor.
-   */
+  //Movimiento del cursor
   case KEY_ARROW_UP:
   case KEY_ARROW_DOWN:
   case KEY_ARROW_LEFT:
@@ -735,38 +790,28 @@ static void editor_process_key(void)
     editor_move_cursor(key);
     break;
 
-  /*
-   * Tecla Delete.
-   */
+  //Tecla Delete
   case KEY_DELETE:
     editor_delete_character();
     break;
 
-  /*
-   * Backspace puede llegar como 127 o Ctrl+H.
-   */
+  //Backspace puede llegar como 127 o Ctrl+H
   case 127:
   case CTRL_KEY('h'):
     editor_backspace();
     break;
 
-  /*
-   * Enter.
-   */
+  //Enter
   case '\r':
   case '\n':
     editor_insert_newline();
     break;
 
-  /*
-   * Escape, de momento no hace nada.
-   */
+  //Escape, de momento no hace nada
   case '\x1b':
     break;
 
-  /*
-   * Caracteres imprimibles normales.
-   */
+  //Caracteres imprimibles normales
   default:
     if(key >= 32 && key <= 126)
       editor_insert_character(key);
@@ -785,6 +830,8 @@ editor_set_status(char *message)
 
   memmove(editor.status, message, length);
   editor.status[length] = '\0';
+
+  status_refresh_needed = 1;
 }
 
 //funcion para cargar un fichero existente 
@@ -798,8 +845,8 @@ editor_load_file(char *filename)
   fd = open(filename, O_RDONLY);
 
   /*
-   * Si no existe, no es un error:
-   * se comienza con un archivo vacío.
+    Si no existe, no es un error
+    se comienza con un archivo vacío
    */
   if(fd < 0){
     editor.line_count = 1;
@@ -851,9 +898,8 @@ editor_load_file(char *filename)
   close(fd);
 
   /*
-   * Si el archivo termina en '\n', el código anterior crea una última
-   * línea vacía. Eso es correcto para un editor de texto.
-   */
+    Si el archivo termina en '\n', el código anterior crea una última
+    línea vacía, esto se hace para un editor de texto por correctitud*/
   editor.modified = 0;
   editor_set_status("Archivo cargado");
 
@@ -871,10 +917,8 @@ editor_save_file(void)
     return -1;
   }
 
-  /*
-   * xv6 no suele tener O_TRUNC.
-   * Eliminamos el archivo y lo volvemos a crear.
-   */
+  //xv6 no tiene O_TRUNC. Se elimina el fichero y se vuelve a crear
+ 
   unlink(editor.filename);
 
   fd = open(editor.filename, O_CREATE | O_WRONLY);
@@ -906,10 +950,10 @@ editor_save_file(void)
     }
 
     /*
-     * Escribimos salto entre líneas.
-     *
-     * También dejamos newline en la última línea, algo habitual
-     * para fuentes ensamblador.
+      Se escribe salto entre lineas
+     
+      También se deja newline en la última línea, algo habitual
+      para fuentes ensamblador
      */
     if(write(fd, "\n", 1) != 1){
       close(fd);
@@ -921,9 +965,22 @@ editor_save_file(void)
   close(fd);
 
   editor.modified = 0;
+  title_refresh_needed = 1;
   editor_set_status("Archivo guardado");
 
   return 0;
+}
+
+static void
+editor_place_cursor(void)
+{
+  int screen_y =
+    editor.cursor_y - editor.row_offset + TEXT_TOP;
+
+  int screen_x =
+    editor.cursor_x - editor.column_offset + 1;
+
+  printf("\x1b[%d;%dH", screen_y, screen_x);
 }
 
 int
@@ -946,13 +1003,45 @@ main(int argc, char *argv[])
   terminal_write("\x1b[H");
 
   while(1){
-    editor_refresh_screen();
+    if(full_refresh_needed){
+      editor_refresh_screen();
+
+      full_refresh_needed = 0;
+      line_refresh_needed = 0;
+      title_refresh_needed = 0;
+      status_refresh_needed = 0;
+    } else {
+      if(editor_scroll()){
+        editor_refresh_screen();
+
+        full_refresh_needed = 0;
+        line_refresh_needed = 0;
+        title_refresh_needed = 0;
+        status_refresh_needed = 0;
+      } else {
+        if(title_refresh_needed){
+          editor_refresh_title();
+          title_refresh_needed = 0;
+        }
+
+        if(status_refresh_needed){
+          editor_refresh_status();
+          status_refresh_needed = 0;
+        }
+
+        if(line_refresh_needed){
+          editor_refresh_line(line_refresh_y);
+          line_refresh_needed = 0;
+        }
+
+        editor_place_cursor();
+      }
+    }
+
     editor_process_key();
   }
 
-  /*
-   * No debería alcanzarse, pero mantengo restauración defensiva.
-   */
+  // No debería alcanzarse, pero mantengo restauración defensiva
   editor_cleanup();
   exit(0);
 }
