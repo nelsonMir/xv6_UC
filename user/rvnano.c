@@ -62,6 +62,7 @@ static int clipboard_length;
 static int full_refresh_needed = 1;
 static int line_refresh_needed = 0;
 static int line_refresh_y = 0;
+static int line_refresh_x = 0;
 static int title_refresh_needed = 0;
 static int status_refresh_needed = 0;
 
@@ -339,10 +340,31 @@ editor_mark_modified(void)
 }
 
 static void
+editor_mark_line_dirty_from(int file_y, int file_x)
+{
+  if(file_x < 0)
+    file_x = 0;
+
+  //si hay otra linea pendiente de refresco, se hace refresco completo, para cuando se procesen cosas en lotee
+  if(line_refresh_needed && line_refresh_y != file_y){
+    full_refresh_needed = 1;
+    return;
+  }
+
+  if(line_refresh_needed){
+    if(file_x < line_refresh_x)
+      line_refresh_x = file_x;
+  } else {
+    line_refresh_needed = 1;
+    line_refresh_y = file_y;
+    line_refresh_x = file_x;
+  }
+}
+
+static void
 editor_mark_line_dirty(int file_y)
 {
-  line_refresh_needed = 1;
-  line_refresh_y = file_y;
+  editor_mark_line_dirty_from(file_y, 0);
 }
 
 static void
@@ -360,7 +382,7 @@ editor_refresh_status(void)
 }
 
 static void
-editor_refresh_line(int file_y)
+editor_refresh_line_from(int file_y, int file_x)
 {
   int screen_y = file_y - editor.row_offset + TEXT_TOP;
 
@@ -369,25 +391,51 @@ editor_refresh_line(int file_y)
     return;
   }
 
-  printf("\x1b[%d;1H", screen_y);
-  terminal_write("\x1b[2K");
-
   if(file_y >= editor.line_count){
+    printf("\x1b[%d;1H", screen_y);
     terminal_write("~");
+    terminal_write("\x1b[K");
     return;
   }
 
   struct editor_line *line = &editor.lines[file_y];
 
-  int start = editor.column_offset;
-  int available = line->length - start;
+  /*
+    Si el cambio ocurrió antes de la zona visible horizontal,
+    se refrescadesde la primera columna visible
+   */
+  if(file_x < editor.column_offset)
+    file_x = editor.column_offset;
+
+  /*
+    Si se borró al final de la línea, file_x puede quedar justo
+    en line->length eso puese pasar, entonces no se escribe texto
+    pero se limpia lo que sobraba en pantalla
+   */
+  if(file_x > line->length)
+    file_x = line->length;
+
+  int screen_x = file_x - editor.column_offset + 1;
+
+  if(screen_x < 1 || screen_x > SCREEN_COLS)
+    return;
+
+  printf("\x1b[%d;%dH", screen_y, screen_x);
+
+  int available = line->length - file_x;
+  int max_visible = SCREEN_COLS - screen_x + 1;
 
   if(available > 0){
-    if(available > SCREEN_COLS)
-      available = SCREEN_COLS;
+    if(available > max_visible)
+      available = max_visible;
 
-    write(1, line->text + start, available);
+    write(1, line->text + file_x, available);
   }
+
+  /*
+    Borra desde la posición actual hasta el final de la línea eso limpia restos cuando se borra texto
+   */
+  terminal_write("\x1b[K");
 }
 
 static void
@@ -451,6 +499,8 @@ editor_insert_character(int character)
   if(line->length >= MAX_LINE_LENGTH - 1)
     return;
 
+  int changed_x = editor.cursor_x;
+
   memmove(
     line->text + editor.cursor_x + 1,
     line->text + editor.cursor_x,
@@ -463,7 +513,7 @@ editor_insert_character(int character)
 
   editor.cursor_x++;
   editor_mark_modified();
-  editor_mark_line_dirty(editor.cursor_y);
+  editor_mark_line_dirty_from(editor.cursor_y, changed_x);
 }
 
 static void
@@ -528,7 +578,7 @@ editor_backspace(void)
 
     editor.cursor_x--;
     editor_mark_modified();
-    editor_mark_line_dirty(editor.cursor_y);
+    editor_mark_line_dirty_from(editor.cursor_y, editor.cursor_x);
     return;
   }
 
@@ -586,7 +636,7 @@ editor_delete_character(void)
     line->text[line->length] = '\0';
 
     editor_mark_modified();
-    editor_mark_line_dirty(editor.cursor_y);
+    editor_mark_line_dirty_from(editor.cursor_y, editor.cursor_x);
     return;
   }
 
@@ -1030,7 +1080,7 @@ main(int argc, char *argv[])
         }
 
         if(line_refresh_needed){
-          editor_refresh_line(line_refresh_y);
+          editor_refresh_line_from(line_refresh_y, line_refresh_x);
           line_refresh_needed = 0;
         }
 
