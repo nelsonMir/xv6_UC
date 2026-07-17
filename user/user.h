@@ -31,6 +31,7 @@ int nice(int, int);
 int setscheduler(int);
 int term_raw(void);
 int term_cooked(void);
+int term_available(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

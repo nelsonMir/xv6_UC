@@ -45,7 +45,7 @@ struct {
   struct spinlock lock;
   
   // input
-#define INPUT_BUF_SIZE 128
+#define INPUT_BUF_SIZE 1024 //tamanhio del buffer de la consola
   char buf[INPUT_BUF_SIZE];
   uint r;  // Read index
   uint w;  // Write index
@@ -219,11 +219,24 @@ console_set_raw(int enabled)
 
   cons.raw_mode = enabled;
 
-  /*
-   * Vacía cualquier entrada pendiente para no entregar al editor
-   * caracteres de una línea anterior.
-   */
+  //Vacía cualquier entrada pendiente para no entregar al rvnano
+  //caracteres de una línea anterior
   cons.r = cons.w = cons.e = 0;
 
   release(&cons.lock);
+}
+
+
+//funcion auxiliar para llamada al sistema para saber cuántos bytes hay en el buffer de la 
+//consola y así procesar varias varios caracteres de golpe al copiar y pegar algo en el rvnano
+int
+console_available(void)
+{
+  int n;
+
+  acquire(&cons.lock);
+  n = cons.w - cons.r;
+  release(&cons.lock);
+
+  return n;
 }

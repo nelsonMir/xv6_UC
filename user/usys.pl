@@ -45,3 +45,4 @@ entry("nice");
 entry("setscheduler");
 entry("term_raw");
 entry("term_cooked");
+entry("term_available");

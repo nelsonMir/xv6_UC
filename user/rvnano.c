@@ -73,6 +73,7 @@ static int editor_load_file(char *filename);
 static int editor_save_file(void);
 static void editor_cut_line(void);
 static void editor_paste_line(void);
+static void editor_process_keys_batch(void);
 
 //Escribe una cadena completa sin depender de printf
 static void
@@ -299,7 +300,7 @@ editor_draw_help(void)
   terminal_write("\x1b[0m");
 }
 
-//Redibuja toda la pantalla.
+//Redibuja toda la pantalla
 static void
 editor_refresh_screen(void)
 {
@@ -314,9 +315,9 @@ editor_refresh_screen(void)
   editor_draw_help();
 
   /*
-    ANSI usa filas y columnas empezando en 1.
+    ANSI usa filas y columnas empezando en 1
    
-    La primera línea de texto está en la fila 2.
+    La primera línea de texto está en la fila 2
    */
   int screen_y =
     editor.cursor_y - editor.row_offset + TEXT_TOP;
@@ -1033,6 +1034,17 @@ editor_place_cursor(void)
   printf("\x1b[%d;%dH", screen_y, screen_x);
 }
 
+//procesar varios caracteres de golpe (en lote)
+static void
+editor_process_keys_batch(void)
+{
+  editor_process_key();
+
+  while(term_available() > 0){
+    editor_process_key();
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1088,7 +1100,7 @@ main(int argc, char *argv[])
       }
     }
 
-    editor_process_key();
+    editor_process_keys_batch();
   }
 
   // No debería alcanzarse, pero mantengo restauración defensiva
