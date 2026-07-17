@@ -58,11 +58,13 @@ static int quit_pending;
 static char clipboard[MAX_LINE_LENGTH];
 static int clipboard_length;
 
-//variables para manejar el refresco de la pantalla (total o solo de la linea)
+//variables para manejar el refresco de la pantalla (total, solo de la linea o a partir de la linea modificada)
 static int full_refresh_needed = 1;
 static int line_refresh_needed = 0;
 static int line_refresh_y = 0;
 static int line_refresh_x = 0;
+static int rows_refresh_needed = 0; //número de líneas a modificar
+static int rows_refresh_from_y = 0; //línea desde la cuall se hará el refresco
 static int title_refresh_needed = 0;
 static int status_refresh_needed = 0;
 
@@ -368,6 +370,23 @@ editor_mark_line_dirty(int file_y)
   editor_mark_line_dirty_from(file_y, 0);
 }
 
+//función auxiliar para indicar desde que línea se va a refrescar (al hacer enter)
+//y para ello se marcan filas como sucias
+static void
+editor_mark_rows_dirty_from(int file_y)
+{
+  if(file_y < 0)
+    file_y = 0;
+
+  if(rows_refresh_needed){
+    if(file_y < rows_refresh_from_y)
+      rows_refresh_from_y = file_y;
+  } else {
+    rows_refresh_needed = 1;
+    rows_refresh_from_y = file_y;
+  }
+}
+
 static void
 editor_refresh_title(void)
 {
@@ -433,10 +452,51 @@ editor_refresh_line_from(int file_y, int file_x)
     write(1, line->text + file_x, available);
   }
 
-  /*
-    Borra desde la posición actual hasta el final de la línea eso limpia restos cuando se borra texto
-   */
+  //Borra desde la posición actual hasta el final de la línea eso limpia restos cuando se borra texto
   terminal_write("\x1b[K");
+}
+
+//refresca todas las líneas para abajo desde una dada. con esto se evitar refrescar todo al dar enter
+static void
+editor_refresh_rows_from(int file_y)
+{
+  int visible_rows = TEXT_BOTTOM - TEXT_TOP + 1;
+
+  int start_screen_row = file_y - editor.row_offset;
+
+  if(start_screen_row < 0)
+    start_screen_row = 0;
+
+  if(start_screen_row >= visible_rows)
+    return;
+
+  for(int screen_row = start_screen_row;
+      screen_row < visible_rows;
+      screen_row++){
+
+    int screen_y = TEXT_TOP + screen_row;
+    int current_file_y = editor.row_offset + screen_row;
+
+    printf("\x1b[%d;1H", screen_y);
+    terminal_write("\x1b[2K");
+
+    if(current_file_y >= editor.line_count){
+      terminal_write("~");
+    } else {
+      struct editor_line *line =
+        &editor.lines[current_file_y];
+
+      int start = editor.column_offset;
+      int available = line->length - start;
+
+      if(available > 0){
+        if(available > SCREEN_COLS)
+          available = SCREEN_COLS;
+
+        write(1, line->text + start, available);
+      }
+    }
+  }
 }
 
 static void
@@ -523,6 +583,9 @@ editor_insert_newline(void)
   if(editor.line_count >= MAX_LINES)
     return;
 
+  //guardar la línea afectada antes de mover el cursor 
+  int changed_y = editor.cursor_y;
+
   struct editor_line *current =
     &editor.lines[editor.cursor_y];
 
@@ -558,7 +621,7 @@ editor_insert_newline(void)
   editor.cursor_x = 0;
 
   editor_mark_modified();
-  full_refresh_needed = 1;
+  editor_mark_rows_dirty_from(changed_y);
 }
 
 static void
@@ -616,7 +679,7 @@ editor_backspace(void)
     editor.cursor_x = previous_length;
 
     editor_mark_modified();
-    full_refresh_needed = 1;
+    editor_mark_rows_dirty_from(editor.cursor_y);
   }
 }
 
@@ -668,7 +731,7 @@ editor_delete_character(void)
 
     editor.line_count--;
     editor_mark_modified();
-    full_refresh_needed = 1;
+    editor_mark_rows_dirty_from(editor.cursor_y);
   }
 }
 
@@ -692,10 +755,8 @@ editor_cut_line(void)
 
   clipboard[clipboard_length] = '\0';
 
-  /*
-    Si solamente existe una línea, se vacía,
-    pero se mantiene el documento con una línea
-   */
+  //Si solamente existe una línea, se vacía,
+  //pero se mantiene el documento con una línea
   if(editor.line_count == 1){
     line->length = 0;
     line->text[0] = '\0';
@@ -727,7 +788,7 @@ editor_cut_line(void)
 
   editor.cursor_x = 0;
   editor_mark_modified();
-  full_refresh_needed = 1;
+  editor_mark_rows_dirty_from(editor.cursor_y);
 
   editor_set_status("Linea cortada");
 }
@@ -775,7 +836,7 @@ editor_paste_line(void)
   editor.cursor_x = line->length;
 
   editor_mark_modified();
-  full_refresh_needed = 1;
+  editor_mark_rows_dirty_from(editor.cursor_y);
   editor_set_status("Linea pegada");
 }
 
@@ -1070,6 +1131,7 @@ main(int argc, char *argv[])
 
       full_refresh_needed = 0;
       line_refresh_needed = 0;
+      rows_refresh_needed = 0;
       title_refresh_needed = 0;
       status_refresh_needed = 0;
     } else {
@@ -1078,6 +1140,7 @@ main(int argc, char *argv[])
 
         full_refresh_needed = 0;
         line_refresh_needed = 0;
+        rows_refresh_needed = 0;
         title_refresh_needed = 0;
         status_refresh_needed = 0;
       } else {
@@ -1089,6 +1152,12 @@ main(int argc, char *argv[])
         if(status_refresh_needed){
           editor_refresh_status();
           status_refresh_needed = 0;
+        }
+
+        if(rows_refresh_needed){
+          editor_refresh_rows_from(rows_refresh_from_y);
+          rows_refresh_needed = 0;
+          line_refresh_needed = 0;
         }
 
         if(line_refresh_needed){
