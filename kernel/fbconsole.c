@@ -540,30 +540,147 @@ fbconsole_cursor_show_locked(void)
   }
 }
 
+/*
+  Implementa la secuencia ANSI EL: ESC[nK ---> la k significa Erase in LIne
+ 
+  mode == 0:
+    Borra desde el cursor hasta el final de la línea
+ 
+  mode == 1:
+    Borra desde el inicio de la línea hasta el cursor
+ 
+  mode == 2:
+    Borra la línea completa
+ */
+static void
+fbconsole_clear_line_locked(int mode)
+{
+  uint32 first_column;
+  uint32 last_column;
+
+  if(fbcons.row >= FBCONSOLE_ROWS)
+    return;
+
+  switch(mode){
+  case 1:
+    first_column = 0;
+    last_column = fbcons.column;
+    break;
+
+  case 2:
+    first_column = 0;
+    last_column = FBCONSOLE_COLS - 1U;
+    break;
+
+  case 0:
+  default:
+    first_column = fbcons.column;
+    last_column = FBCONSOLE_COLS - 1U;
+    break;
+  }
+
+  if(first_column >= FBCONSOLE_COLS)
+    return;
+
+  if(last_column >= FBCONSOLE_COLS)
+    last_column = FBCONSOLE_COLS - 1U;
+
+  fbconsole_fill_rect_locked(
+    first_column * FBCONSOLE_CHAR_WIDTH,
+    fbcons.row * FBCONSOLE_CHAR_HEIGHT,
+    (last_column - first_column + 1U) *
+      FBCONSOLE_CHAR_WIDTH,
+    FBCONSOLE_CHAR_HEIGHT,
+    fbconsole_active_background_locked()
+  );
+}
+
+/*
+  Implementa la secuencia ANSI ED: ESC[nJ --> J significa Erase in Display, y sirve para borrar 
+  una región de la pantalla
+ 
+  mode == 0:
+    Borra desde el cursor hasta el final de la pantalla
+ 
+  mode == 1:
+    Borra desde el principio de la pantalla hasta el cursor
+ 
+  mode == 2:
+    Borra toda la pantalla
+ */
+static void
+fbconsole_clear_screen_locked(int mode)
+{
+  uint32 background =
+    fbconsole_active_background_locked();
+
+  switch(mode){
+  case 0:
+    //Primero borrar la parte restante de la fila actual
+    fbconsole_clear_line_locked(0);
+
+    //Después borrar todas las filas siguientes
+    if(fbcons.row + 1U < FBCONSOLE_ROWS){
+      fbconsole_fill_rect_locked(
+        0,
+        (fbcons.row + 1U) * FBCONSOLE_CHAR_HEIGHT,
+        FBCONSOLE_COLS * FBCONSOLE_CHAR_WIDTH,
+        (FBCONSOLE_ROWS - fbcons.row - 1U) *
+          FBCONSOLE_CHAR_HEIGHT,
+        background
+      );
+    }
+    break;
+
+  case 1:
+    //Borrar todas las filas anteriores
+    if(fbcons.row > 0){
+      fbconsole_fill_rect_locked(
+        0,
+        0,
+        FBCONSOLE_COLS * FBCONSOLE_CHAR_WIDTH,
+        fbcons.row * FBCONSOLE_CHAR_HEIGHT,
+        background
+      );
+    }
+
+    //Borrar la fila actual hasta el cursor.
+    fbconsole_clear_line_locked(1);
+    break;
+
+  case 2:
+  default:
+    //ESC[2J: borrar el framebuffer completo.
+    fbconsole_fill_rect_locked(
+      0,
+      0,
+      HDMI_FB_WIDTH,
+      HDMI_FB_HEIGHT,
+      background
+    );
+    break;
+  }
+}
+
+/*
+  Borra la última fila de texto después de hacer scroll (cuando se sale de la panatlla)
+ 
+  Utiliza el fondo activo para respetar el estado de vídeo inverso (colores invertidos)
+ */
 static void
 fbconsole_clear_last_text_row_locked(void)
 {
-  uint32 first_y;
-
-  first_y =
+  uint32 first_y =
     (FBCONSOLE_ROWS - 1U) *
     FBCONSOLE_CHAR_HEIGHT;
 
-  for(uint32 y = first_y;
-      y < HDMI_FB_HEIGHT;
-      y++){
-
-    uint64 row_base =
-      (uint64)y * HDMI_FB_WIDTH;
-
-    for(uint32 x = 0;
-        x < HDMI_FB_WIDTH;
-        x++){
-
-      fbcons.framebuffer[row_base + x] =
-        FBCONSOLE_BACKGROUND;
-    }
-  }
+  fbconsole_fill_rect_locked(
+    0,
+    first_y,
+    HDMI_FB_WIDTH,
+    HDMI_FB_HEIGHT - first_y,
+    fbconsole_active_background_locked()
+  );
 }
 
 static void
@@ -662,6 +779,271 @@ fbconsole_tab_locked(void)
 
   for(uint32 i = 0; i < spaces; i++)
     fbconsole_printable_locked(' ');
+}
+
+/*Funciones auxiliar del parser ANSI*/
+
+/*Devuelve un parámetro del array de parámetros de la secuencia ANSI CSI
+
+POr defecto devuelve default_value cuando:
+- el parámetro no existe
+- el parámetro fue omitido 
+EJ:
+ESC[H      no contiene parámetros explícitos
+ESC[12H    contiene un parámetro
+ESC[12;H   tiene el segundo parámetro omitido*/
+static int
+fbconsole_ansi_parameter_locked(int index,
+                                int default_value)
+{
+  if(index < 0 || index >= fbcons.parameter_count)
+    return default_value;
+
+  //si -1 entonces el parámetro ha sido omitido 
+  if(fbcons.parameters[index] < 0)
+    return default_value;
+
+  return fbcons.parameters[index];
+}
+
+//Detecta que se ha comenzado una seccuencia ANSI CSI después de recibir ESC[
+static void
+fbconsole_ansi_begin_csi_locked(void)
+{
+  fbcons.parser_state = FBCONSOLE_STATE_CSI;
+
+  //Siempre se empieza con un parámetro lógico, aunque esté omitido.
+  fbcons.parameter_count = 1;
+  fbcons.parameters[0] = -1;
+
+  fbcons.private_sequence = 0;
+}
+
+//Termina o cancela una secuencia ANSI. se llama cuando se ha ejecutado una secuencia ANSI o la secuencia estaba mal formada 
+static void
+fbconsole_ansi_reset_parser_locked(void)
+{
+  fbcons.parser_state = FBCONSOLE_STATE_NORMAL;
+  fbcons.parameter_count = 0;
+  fbcons.private_sequence = 0;
+}
+
+static uint32
+fbconsole_clamp_position(int value, uint32 limit)
+{
+  if(value <= 0)
+    value = 1;
+
+  if((uint32)value > limit)
+    value = (int)limit;
+
+  return (uint32)(value - 1);
+}
+
+/*Ejecutor de secuencias ANSI, para ejecutar los comandos*/
+
+/*EL caracter final de la secuencia va a determinar la operación a realizar:
+A, B, C, D  movimiento relativo
+G, d        posición horizontal o vertical absoluta
+H, f        posición absoluta fila/columna
+J           borrar pantalla
+K           borrar línea
+m           atributos gráficos
+s, u        guardar/restaurar cursor
+h, l        activar/desactivar modos privados*/
+static void
+fbconsole_ansi_execute_locked(int final_character)
+{
+  //Primer parámetro. Cuando está omitido se devuelve cero
+  int first =
+    fbconsole_ansi_parameter_locked(0, 0);
+
+  switch(final_character){
+
+  //ESC[nA: mover el cursor hacia arriba
+  case 'A': {
+    uint32 amount =
+      (uint32)(first <= 0 ? 1 : first);
+
+    fbcons.row =
+      amount > fbcons.row
+        ? 0
+        : fbcons.row - amount;
+
+    break;
+  }
+
+  //ESC[nB: mover el cursor hacia abajo
+
+  case 'B': {
+    uint32 amount =
+      (uint32)(first <= 0 ? 1 : first);
+
+    uint32 maximum =
+      FBCONSOLE_ROWS - 1U;
+
+    fbcons.row =
+      amount > maximum - fbcons.row
+        ? maximum
+        : fbcons.row + amount;
+
+    break;
+  }
+
+  //ESC[nC: mover el cursor hacia la derecha
+  case 'C': {
+    uint32 amount =
+      (uint32)(first <= 0 ? 1 : first);
+
+    uint32 maximum =
+      FBCONSOLE_COLS - 1U;
+
+    fbcons.column =
+      amount > maximum - fbcons.column
+        ? maximum
+        : fbcons.column + amount;
+
+    break;
+  }
+
+  //ESC[nD: mover el cursor hacia la izquierda
+  case 'D': {
+    uint32 amount =
+      (uint32)(first <= 0 ? 1 : first);
+
+    fbcons.column =
+      amount > fbcons.column
+        ? 0
+        : fbcons.column - amount;
+
+    break;
+  }
+
+  //ESC[nG: posición horizontal absoluta
+  case 'G':
+    fbcons.column =
+      fbconsole_clamp_position(
+        first,
+        FBCONSOLE_COLS
+      );
+    break;
+
+  //ESC[nd: posición vertical absoluta
+  case 'd':
+    fbcons.row =
+      fbconsole_clamp_position(
+        first,
+        FBCONSOLE_ROWS
+      );
+    break;
+
+  //ESC[fila;columnaf y ESC[fila;columnaH: posición absoluta de cursor
+  case 'H':
+  case 'f':
+    fbcons.row =
+      fbconsole_clamp_position(
+        fbconsole_ansi_parameter_locked(0, 1),
+        FBCONSOLE_ROWS
+      );
+
+    fbcons.column =
+      fbconsole_clamp_position(
+        fbconsole_ansi_parameter_locked(1, 1),
+        FBCONSOLE_COLS
+      );
+    break;
+
+  //ESC[nJ: borrar pantalla
+  case 'J':
+    fbconsole_clear_screen_locked(first);
+    break;
+
+  //ESC[nK: borrar línea
+  case 'K':
+    fbconsole_clear_line_locked(first);
+    break;
+
+  //ESC[nm: cambiar atributos gráficos
+
+  case 'm':
+    for(int i = 0;
+        i < fbcons.parameter_count;
+        i++){
+
+      //Un parámetro omitido en SGR equivale a cero.
+      int attribute =
+        fbcons.parameters[i] < 0
+          ? 0
+          : fbcons.parameters[i];
+
+      switch(attribute){
+
+      //Restaurar todos los atributos
+      case 0:
+        fbcons.reverse_video = 0;
+        fbcons.foreground = FBCONSOLE_FOREGROUND;
+        fbcons.background = FBCONSOLE_BACKGROUND;
+        break;
+
+      //Activar vídeo inverso (invertir colores)
+      case 7:
+        fbcons.reverse_video = 1;
+        break;
+
+      //Desactivar solamente el vídeo inverso
+      case 27:
+        fbcons.reverse_video = 0;
+        break;
+
+      //Restaurar el color de texto predeterminado
+      case 39:
+        fbcons.foreground = FBCONSOLE_FOREGROUND;
+        break;
+
+      //Restaurar el color de fondo predeterminado
+      case 49:
+        fbcons.background = FBCONSOLE_BACKGROUND;
+        break;
+
+      default:
+        //Se ignoran los atributos que todavía no implementados
+        break;
+      }
+    }
+    break;
+
+  //Guardar posición del cursor: ESC[s
+  case 's':
+    fbcons.saved_row = fbcons.row;
+    fbcons.saved_column = fbcons.column;
+    break;
+
+  //Restaurar posición del cursor: ESC[u
+  case 'u':
+    fbcons.row = fbcons.saved_row;
+    fbcons.column = fbcons.saved_column;
+    break;
+
+  /*
+    Modos privados DEC:
+   
+    ESC[?25h muestra el cursor
+    ESC[?25l oculta el cursor
+   */
+  case 'h':
+  case 'l':
+    if(fbcons.private_sequence &&
+       first == 25){
+
+      fbcons.cursor_visible =
+        (final_character == 'h');
+    }
+    break;
+
+  default:
+    //La secuencia se consume pero no se imprime
+    break;
+  }
 }
 
 void

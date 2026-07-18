@@ -292,14 +292,14 @@ sd_read_sector(uint64 lba, uchar *dst)
     }
 
     /*
-    * DATA_OVER no significa necesariamente que el FIFO esté vacío.
-    * En la traza vi:
-    *
-    *   RINTSTS=0x28 = DATA_OVER | RXDR
-    *   copied=115
-    *
-    * Es decir, la transferencia terminó, pero todavía quedaban datos
-    * pendientes en el FIFO. Por eso NO hacemos panic aquí.
+     DATA_OVER no significa necesariamente que el FIFO esté vacío.
+     En la traza de debugg vi:
+    
+       RINTSTS=0x28 = DATA_OVER | RXDR
+      copied=115
+    
+     Es decir, la transferencia terminó, pero todavía quedaban datos
+     pendientes en el FIFO, por eso NO hago panic aquí
     */
     if(r & INT_DATA_OVER){
       status = sd_readl(SDMMC_STATUS);
@@ -371,8 +371,8 @@ sd_write_sector(uint64 lba, uchar *src)
     uint fcnt = STATUS_FIFO_COUNT(status);
 
     /*
-     * El FIFO tiene 32 palabras según HCON/driver Linux típico.
-     * Dejamos margen: si hay menos de 31 palabras, escribimos.
+      El FIFO tiene 32 palabras según HCON/driver Linux típico.
+      Dejamos margen: si hay menos de 31 palabras, escribimos.
      */
     if(fcnt < 31){
       idle = 0;
