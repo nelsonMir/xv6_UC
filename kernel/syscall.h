@@ -27,3 +27,6 @@
 #define SYS_getpriority 25
 #define SYS_nice    26
 #define SYS_setscheduler 27
+#define SYS_term_raw     28
+#define SYS_term_cooked  29
+#define SYS_term_available 30

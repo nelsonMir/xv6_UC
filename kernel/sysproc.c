@@ -229,3 +229,23 @@ uint64 sys_setscheduler(void)
 
   return 0;
 }
+
+//cambiar el modo de la consola 
+uint64 sys_term_raw(void)
+{
+  console_set_raw(1);
+  return 0;
+}
+
+uint64 sys_term_cooked(void)
+{
+  console_set_raw(0);
+  return 0;
+}
+
+//llamada al sistema para saber el numero de caaracteres/bytes en el buffer de la consola 
+//para procesarlas todas de golpe en el editor de texto 
+uint64 sys_term_available(void)
+{
+  return console_available();
+}

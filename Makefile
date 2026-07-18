@@ -104,6 +104,8 @@ UPROGS = \
   $(U)/_pwd \
   $(U)/_setsched \
   $(U)/_benchsched \
+  $(U)/_rawtest \
+  $(U)/_rvnano \
 
 # ============================================
 #  Kernel final (ELF + bin) y símbolos
