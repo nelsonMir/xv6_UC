@@ -38,8 +38,8 @@
 
 #define FBCONSOLE_TAB_WIDTH      8U
 
-#define FBCONSOLE_BACKGROUND     0x00000000U
-#define FBCONSOLE_FOREGROUND     0x00ffffffU
+#define FBCONSOLE_BACKGROUND     0x00000000U  // negro
+#define FBCONSOLE_FOREGROUND     0x00ffffffU  // blanco
 
 /*
   Tabla ASCII básica 8x8.
@@ -178,11 +178,59 @@ static const uint8 font8x8_basic[128][8] = {
   { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}    // U+007F
 };
 
+/*numero maximo de parámetros que se acepta dentro de una secuencia ANSI CSI ej:
+ESC[12;40H --> tiene 2 parámetros: fila 12, columna 40
+esto es  necesario para la versión de la placa porque se utiliza para mandar ordenes. Es deecir, en vez de mandar 
+texto a secas, una secuencia ansi se usa para hacer operaciones o para indicar operaciones, por ejemplo: 
+un programa puede mandar varias cosass:
+write(1, "Hola", 4); ---> escribir hola 
+write(1, "\x1b[2J", 4); ---> borrar pantalla
+Para que rvnano se muestre bien en la placa, es necesario modificar ciertas zonas concretas de la pantalla sin imprimir todo 
+continuamente hacia abajo (problema que pasaba al pasar directamente la versión de qemu a la placa). por ejemplo, pulsar una flecha
+para mover el cursor.
+Las diferencias con la versión inicial de qemu es que las secuencia ANSI no las interpretaba xv6, las interpretaba la consola de minicom en 
+el ordenador. 
+*/
+#define ANSI_MAX_PARAMS 8
+
+/*Estado de la máquina que interpreta las secuencias ANSI:
+- normal: se reciben caracteres normales
+- ESC: se acaba de recbiri el byte del caracter ESC: 0x1b
+- CSI: se ha recibido el caracter ESC seguido de corcherte abierto '[', osea se leen parametros hasta el caracter def inal de la secuencia (H)*/
+enum fbconsole_parser_state {
+  FBCONSOLE_STATE_NORMAL,
+  FBCONSOLE_STATE_ESC,
+  FBCONSOLE_STATE_CSI
+};
+
 struct {
   struct spinlock lock;
+  //@ virtual para acceder al framebuffer
   volatile uint32 *framebuffer;
+  //posicion actual del cursos, inician en 0 ambos
   uint32 column;
   uint32 row;
+  //posicion guardada con ESC[s, se 
+  uint32 saved_column;
+  uint32 saved_row;
+  //colores de la consola. si se usa "reverse_vide" simplemente se invierte los colores del fondo y la letra 
+  //util para poner consola blanca y letras negras
+  uint32 foreground;
+  uint32 background;
+  int reverse_video;
+  //estado persistente del parser ANSI
+  enum fbconsole_parser_state parser_state;
+  //parámetros de la secuencia ANSI CSI actual. EJ: ESC[12;40H: parameters[0] = 12 parameters[1] = 40
+  int parameters[ANSI_MAX_PARAMS];
+  int parameter_count;
+  //la secuencia tiene '?'. se usa para secuencias privadas
+  int private_sequence;
+  //el programa permite que se vea el cursor
+   int cursor_visible;
+   //el cursor está dibujado físicamente en el framebuffer
+   //son estados diferntes porque el cursor se retira temporalmente antes de modificar la pantalla
+  int cursor_drawn;
+  //la consola solo puede dibujar despues de que el hdmi esté inicializado
   int ready;
 } fbcons;
 
@@ -191,6 +239,24 @@ struct {
   activar fbcons.ready: printf -> consputc -> fbconsole_putc,
   porque ocurriria una recursion infinnita
  */
+
+//devuelve el color con el que deben pintarse los caracteres (piseles del glyph)
+static uint32
+fbconsole_active_foreground_locked(void)
+{
+  return fbcons.reverse_video
+    ? fbcons.background
+    : fbcons.foreground;
+}
+
+//devuelve el color con el que debe pintarse el background de la celda
+static uint32
+fbconsole_active_background_locked(void)
+{
+  return fbcons.reverse_video
+    ? fbcons.foreground
+    : fbcons.background;
+}
 
 static void
 fbconsole_put_pixel_locked(uint32 x, uint32 y, uint32 color)
@@ -203,6 +269,54 @@ fbconsole_put_pixel_locked(uint32 x, uint32 y, uint32 color)
   ] = color;
 }
 
+/*rellena el rectángulo del frambuffer de un color (para borrar una línea, borrar pantalla completa, borrar última línea al hacer scroll, inicializar pantalla a un fondo)
+
+SI se sale de los límites del framebuffer, pues recorta el rectángulo*/
+static void
+fbconsole_fill_rect_locked(uint32 x,
+                           uint32 y,
+                           uint32 width,
+                           uint32 height,
+                           uint32 color)
+{
+  //El punto inicial está fuera del framebuffer
+
+  if(x >= HDMI_FB_WIDTH || y >= HDMI_FB_HEIGHT)
+    return;
+
+  if(width == 0 || height == 0)
+    return;
+
+  //Recortar horizontalmente
+  if(x + width > HDMI_FB_WIDTH)
+    width = HDMI_FB_WIDTH - x;
+
+  //Recortar verticalmente
+  if(y + height > HDMI_FB_HEIGHT)
+    height = HDMI_FB_HEIGHT - y;
+
+  for(uint32 current_y = y;
+      current_y < y + height;
+      current_y++){
+
+    uint64 row_base =
+      (uint64)current_y * HDMI_FB_WIDTH;
+
+    for(uint32 current_x = x;
+        current_x < x + width;
+        current_x++){
+
+      fbcons.framebuffer[row_base + current_x] = color;
+    }
+  }
+
+  //Ordenar las escrituras antes de limpiar la caché
+  asm volatile("fence rw, rw" ::: "memory");
+
+  //El DC8200 lee el framebuffer mediante DMA, por lo que debe recibir la versión actualizada de este rectángulo
+  hdmi_cache_clean_rect(x, y, width, height);
+}
+
 static const uint8 *
 fbconsole_get_glyph(int character)
 {
@@ -212,7 +326,8 @@ fbconsole_get_glyph(int character)
   return font8x8_basic[(uint)character];
 }
 
-static void
+
+/*static void
 fbconsole_draw_char_locked(uint32 column,
                            uint32 row,
                            int character)
@@ -247,9 +362,9 @@ fbconsole_draw_char_locked(uint32 column,
 
         uint32 color;
 
-        /*
+      
           En esta tabla, bit 0 = píxel izquierdo.
-         */
+       
         if(row_bits & (1U << source_column))
           color = FBCONSOLE_FOREGROUND;
         else
@@ -272,6 +387,157 @@ fbconsole_draw_char_locked(uint32 column,
     FBCONSOLE_CHAR_WIDTH,
     FBCONSOLE_CHAR_HEIGHT
   );
+}*/
+
+/*DIbuja una celda por completo (dibujar tanto el fondo como el caracter/glyph). Esto es necesario porque al sustituir un caracter por otro, se deben nquitar los pixeles
+del anterior*/
+static void
+fbconsole_draw_char_locked(uint32 column,
+                           uint32 row,
+                           int character)
+{
+  const uint8 *glyph;
+  uint32 pixel_x;
+  uint32 pixel_y;
+  uint32 foreground;
+  uint32 background;
+
+  //mpedir escrituras fuera de la matriz lógica de caracteres
+  if(column >= FBCONSOLE_COLS || row >= FBCONSOLE_ROWS)
+    return;
+
+  glyph = fbconsole_get_glyph(character);
+
+  pixel_x = column * FBCONSOLE_CHAR_WIDTH;
+  pixel_y = row * FBCONSOLE_CHAR_HEIGHT;
+
+  /*
+    Obtener los colores activos. la imagen en inverso estarán
+    intercambiados
+   */
+  foreground = fbconsole_active_foreground_locked();
+  background = fbconsole_active_background_locked();
+
+  for(uint32 source_row = 0;
+      source_row < FONT_SOURCE_HEIGHT;
+      source_row++){
+
+    uint8 row_bits = glyph[source_row];
+
+    /*
+      La fuente original mide 8 píxeles de alto.
+      Cada fila se copia dos veces para obtener 16 píxeles.
+     */
+    for(uint32 vertical_copy = 0;
+        vertical_copy < 2U;
+        vertical_copy++){
+
+      uint32 destination_y =
+        pixel_y + (source_row * 2U) + vertical_copy;
+
+      for(uint32 source_column = 0;
+          source_column < FONT_SOURCE_WIDTH;
+          source_column++){
+
+        /*
+          En esta tabla, bit 0 = píxel izquierdo.
+         */
+        uint32 color =
+          (row_bits & (1U << source_column))
+            ? foreground
+            : background;
+
+        fbconsole_put_pixel_locked(
+          pixel_x + source_column,
+          destination_y,
+          color
+        );
+      }
+    }
+  }
+
+  asm volatile("fence rw, rw" ::: "memory");
+
+  hdmi_cache_clean_rect(
+    pixel_x,
+    pixel_y,
+    FBCONSOLE_CHAR_WIDTH,
+    FBCONSOLE_CHAR_HEIGHT
+  );
+}
+
+
+
+/*
+FUncion para pintar el cursor (el parpadeo): modifica físicamente los pixeles de la celda 
+XOR con 0x00ffffff transforma:
+    negro   -> blanco
+    blanco  -> negro
+ósea que ejecutar esta función 2 veces va a restaurar al original
+*/
+static void
+fbconsole_toggle_cursor_locked(void)
+{
+  uint32 pixel_x;
+  uint32 pixel_y;
+
+  if(fbcons.column >= FBCONSOLE_COLS ||
+     fbcons.row >= FBCONSOLE_ROWS)
+    return;
+
+  pixel_x = fbcons.column * FBCONSOLE_CHAR_WIDTH;
+  pixel_y = fbcons.row * FBCONSOLE_CHAR_HEIGHT;
+
+  for(uint32 y = pixel_y;
+      y < pixel_y + FBCONSOLE_CHAR_HEIGHT;
+      y++){
+
+    uint64 row_base =
+      (uint64)y * HDMI_FB_WIDTH;
+
+    for(uint32 x = pixel_x;
+        x < pixel_x + FBCONSOLE_CHAR_WIDTH;
+        x++){
+
+      fbcons.framebuffer[row_base + x] ^= 0x00ffffffU;
+    }
+  }
+
+  asm volatile("fence rw, rw" ::: "memory");
+
+  hdmi_cache_clean_rect(
+    pixel_x,
+    pixel_y,
+    FBCONSOLE_CHAR_WIDTH,
+    FBCONSOLE_CHAR_HEIGHT
+  );
+}
+
+/*Si el cursor del frambeffuer (para indicar la posición del cursor) estaba dibujado, lo retira 
+antes de escribir, borrar o moverse de la posición actual. Esto se hace porque el cursos se debe quitar al dibujar o borrar o al moverlo a otra posición.
+Esta función no cambia el valor de la variable "cursor_visible"*/
+static void
+fbconsole_cursor_hide_locked(void)
+{
+  if(fbcons.cursor_drawn){
+    fbconsole_toggle_cursor_locked();
+    fbcons.cursor_drawn = 0;
+  }
+}
+
+/*
+Decide si mostrar el cursos y de ser así llama a fbconsole_toggle_cursor_locked().
+LO mmuestra si la aplicación no hay oculado el cursor, o si todavía no está dibuja o si no se está en mitad de una secuencia ANSI*/
+static void
+fbconsole_cursor_show_locked(void)
+{
+  if(fbcons.cursor_visible &&
+     !fbcons.cursor_drawn &&
+     fbcons.parser_state == FBCONSOLE_STATE_NORMAL){
+
+    fbconsole_toggle_cursor_locked();
+    fbcons.cursor_drawn = 1;
+  }
 }
 
 static void
