@@ -1046,74 +1046,10 @@ fbconsole_ansi_execute_locked(int final_character)
   }
 }
 
-void
-fbconsole_init(void)
+//procesa un byte que no pertenece a una secuencia ANSI 
+static void
+fbconsole_normal_character_locked(int character)
 {
-  initlock(&fbcons.lock, "fbconsole");
-
-  fbcons.framebuffer = 0;
-  fbcons.column = 0;
-  fbcons.row = 0;
-  fbcons.ready = 0;
-
-  if(!hdmi_is_ready())
-    return;
-
-  fbcons.framebuffer = hdmi_framebuffer_ptr();
-
-  if(fbcons.framebuffer == 0)
-    return;
-
-  __sync_synchronize();
-  fbcons.ready = 1;
-  __sync_synchronize();
-}
-
-int
-fbconsole_is_ready(void)
-{
-  return fbcons.ready != 0;
-}
-
-void
-fbconsole_clear(void)
-{
-  uint64 pixel_count;
-
-  if(!fbcons.ready)
-    return;
-
-  acquire(&fbcons.lock);
-
-  pixel_count =
-    (uint64)HDMI_FB_WIDTH *
-    (uint64)HDMI_FB_HEIGHT;
-
-  for(uint64 i = 0;
-      i < pixel_count;
-      i++){
-
-    fbcons.framebuffer[i] =
-      FBCONSOLE_BACKGROUND;
-  }
-
-  fbcons.column = 0;
-  fbcons.row = 0;
-
-  asm volatile("fence rw, rw" ::: "memory");
-  hdmi_cache_clean_full();
-
-  release(&fbcons.lock);
-}
-
-void
-fbconsole_putc(int character)
-{
-  if(!fbcons.ready)
-    return;
-
-  acquire(&fbcons.lock);
-
   switch(character){
   case '\n':
     fbconsole_newline_locked();
@@ -1136,6 +1072,243 @@ fbconsole_putc(int character)
       fbconsole_printable_locked(character);
     break;
   }
+}
+
+//máquina de estados 
+
+/*REcibe un byte y lo clasifica:
+- como un carácter normal
+- como el comienzo de una seccuencia ANSI
+- una parte de una secuencia intermedia 
+- el carácter final de una secuencia*/
+static void
+fbconsole_feed_locked(int character)
+{
+  unsigned char byte = (unsigned char)character;
+
+  //Retirar temporalmente el cursor antes de modificar o mover cualquier contenido
+  fbconsole_cursor_hide_locked();
+
+  switch(fbcons.parser_state){
+
+  //Estado normal: caracteres ordinarios o comienzo mediante ESC (lo marca como ESC)
+  case FBCONSOLE_STATE_NORMAL:
+    if(byte == 0x1b){
+      fbcons.parser_state = FBCONSOLE_STATE_ESC;
+    } else {
+      fbconsole_normal_character_locked(byte);
+    }
+    break;
+
+  //se acaba de recibir ESC
+  case FBCONSOLE_STATE_ESC:
+    if(byte == '['){
+      //ESC[ comienza una secuencia CSI
+      fbconsole_ansi_begin_csi_locked();
+
+    } else if(byte == '7'){
+      //Forma antigua de guardar cursor: ESC 7
+      fbcons.saved_row = fbcons.row;
+      fbcons.saved_column = fbcons.column;
+      fbconsole_ansi_reset_parser_locked();
+
+    } else if(byte == '8'){
+      //Forma antigua de restaurar cursor: ESC 8
+      fbcons.row = fbcons.saved_row;
+      fbcons.column = fbcons.saved_column;
+      fbconsole_ansi_reset_parser_locked();
+
+    } else {
+      //Secuencia ESC desconocida. Se descarta
+      fbconsole_ansi_reset_parser_locked();
+    }
+    break;
+
+  //Se está procesando una secuencia ESC[...
+  case FBCONSOLE_STATE_CSI:
+
+    //'?' indica una secuencia privada, por ejemplo ESC[?25l
+    if(byte == '?' &&
+       fbcons.parameter_count == 1 &&
+       fbcons.parameters[0] < 0){
+
+      fbcons.private_sequence = 1;
+      break;
+    }
+
+    //Acumular un dígito decimal en el parámetro actual
+    if(byte >= '0' && byte <= '9'){
+      int index =
+        fbcons.parameter_count - 1;
+
+      if(fbcons.parameters[index] < 0)
+        fbcons.parameters[index] = 0;
+
+      fbcons.parameters[index] =
+        fbcons.parameters[index] * 10 +
+        (byte - '0');
+
+      break;
+    }
+
+    //';' comienza un parámetro nuevo
+    if(byte == ';'){
+      if(fbcons.parameter_count <
+         ANSI_MAX_PARAMS){
+
+        fbcons.parameters[
+          fbcons.parameter_count
+        ] = -1;
+
+        fbcons.parameter_count++;
+      }
+
+      break;
+    }
+
+    //Los caracteres finales CSI válidos están entre 0x40 y 0x7e
+    if(byte >= 0x40 && byte <= 0x7e){
+      fbconsole_ansi_execute_locked(byte);
+      fbconsole_ansi_reset_parser_locked();
+
+    } else {
+      //La secuencia está mal formada
+      fbconsole_ansi_reset_parser_locked();
+    }
+    break;
+  }
+
+  /*
+    Volver a dibujar el cursor solamente si:
+      - está habilitado;
+      - la secuencia ANSI ya terminó.
+   */
+  fbconsole_cursor_show_locked();
+}
+
+void
+fbconsole_init(void)
+{
+  initlock(&fbcons.lock, "fbconsole");
+
+  fbcons.framebuffer = 0;
+
+  //Posición inicial
+  fbcons.column = 0;
+  fbcons.row = 0;
+  fbcons.saved_column = 0;
+  fbcons.saved_row = 0;
+
+  //Blanco sobre negro
+  fbcons.foreground = FBCONSOLE_FOREGROUND;
+  fbcons.background = FBCONSOLE_BACKGROUND;
+  fbcons.reverse_video = 0;
+
+  //Estado inicial del parser
+  fbcons.parser_state = FBCONSOLE_STATE_NORMAL;
+  fbcons.parameter_count = 0;
+  fbcons.private_sequence = 0;
+
+  //Cursor habilitado, pero todavía no dibujado
+  fbcons.cursor_visible = 1;
+  fbcons.cursor_drawn = 0;
+
+  fbcons.ready = 0;
+
+  //No se puede usar el framebuffer antes de inicializar HDMI
+  if(!hdmi_is_ready())
+    return;
+
+  fbcons.framebuffer =
+    hdmi_framebuffer_ptr();
+
+  if(fbcons.framebuffer == 0)
+    return;
+
+  __sync_synchronize();
+  fbcons.ready = 1;
+  __sync_synchronize();
+
+  acquire(&fbcons.lock);
+
+  /*
+  hdmi_init() ya deja el framebuffer negro. Aun así se vuelve
+  a rellenar para establecer explícitamente el estado inicial
+  de la consola y sincronizarlo con el controlador de vídeo
+   */
+  fbconsole_fill_rect_locked(
+    0,
+    0,
+    HDMI_FB_WIDTH,
+    HDMI_FB_HEIGHT,
+    FBCONSOLE_BACKGROUND
+  );
+
+  //Dibujar el cursor inicial en la esquina superior izquierda
+  fbconsole_cursor_show_locked();
+
+  release(&fbcons.lock);
+}
+
+int
+fbconsole_is_ready(void)
+{
+  return fbcons.ready != 0;
+}
+
+//limpia toda la consola
+void
+fbconsole_clear(void)
+{
+  if(!fbcons.ready)
+    return;
+
+  acquire(&fbcons.lock);
+
+  //no se intenta restaurar el cursor anterior porque se va a borrar todo el framebuffer
+  fbcons.cursor_drawn = 0;
+
+  //Restaurar posición a inicial
+  fbcons.column = 0;
+  fbcons.row = 0;
+  fbcons.saved_column = 0;
+  fbcons.saved_row = 0;
+
+  //Restaurar colores normales: blanco sobre negro
+  fbcons.foreground = FBCONSOLE_FOREGROUND;
+  fbcons.background = FBCONSOLE_BACKGROUND;
+  fbcons.reverse_video = 0;
+
+  //Cancelar cualquier secuencia ANSI que hubiera quedado incompleta
+  fbconsole_ansi_reset_parser_locked();
+
+  //Borrar toda la pantalla
+  fbconsole_fill_rect_locked(
+    0,
+    0,
+    HDMI_FB_WIDTH,
+    HDMI_FB_HEIGHT,
+    FBCONSOLE_BACKGROUND
+  );
+
+  //Dibujar el cursor en la posición inicial
+  fbconsole_cursor_show_locked();
+
+  release(&fbcons.lock);
+}
+
+/*PUnto de entrada para escribir un byte en la consola HDMI
+
+Esta función coge el lock y pasa el byte al parser persistente*/
+void
+fbconsole_putc(int character)
+{
+  if(!fbcons.ready)
+    return;
+
+  acquire(&fbcons.lock);
+
+  fbconsole_feed_locked(character);
 
   release(&fbcons.lock);
 }
