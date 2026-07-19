@@ -48,7 +48,7 @@
 
 // FIFO:
 // en versiones >= 2.40a el FIFO está en 0x200.
-// Tu controlador suele reportar VERID=0x290a.
+// EL controlador suele reportar VERID=0x290a.
 #define SDMMC_DATA_OLD  0x100
 #define SDMMC_DATA_NEW  0x200
 
@@ -94,11 +94,22 @@
                           INT_HTO | INT_DRTO | INT_RTO | INT_DCRC | \
                           INT_RCRC | INT_RESP_ERR)
 
-// STATUS bits.
+// STATUS bits
 #define STATUS_BUSY      (1U << 9)
 #define STATUS_FIFO_COUNT(x) (((x) >> 17) & 0x1fff)
 
 #define SD_TIMEOUT 10000000
+
+//flag debug 
+#ifndef DBG_SD
+#define DBG_SD 0
+#endif
+
+#if DBG_SD
+#define SD_DEBUG(...) printf(__VA_ARGS__)
+#else
+#define SD_DEBUG(...)
+#endif
 
 static int sd_ready = 0;
 static uint sd_data_offset = SDMMC_DATA_NEW;
@@ -238,20 +249,20 @@ sd_send_cmd(uint cmdidx, uint arg, uint flags)
 static void
 sd_read_sector(uint64 lba, uchar *dst)
 {
-  // De momento asumimos SDHC/SDXC.
-  // En tarjetas SDHC/SDXC, CMD17 usa número de sector.
-  // En SDSC antiguas usaría dirección en bytes.
+  // De momento asumimos SDHC/SDXC
+  // En tarjetas SDHC/SDXC, CMD17 usa número de sector
+  // En SDSC antiguas usaría dirección en bytes
   uint arg = (uint)lba;
 
   sd_prepare_pio();
 
-  // Preparar transferencia de 1 bloque de 512 bytes.
+  // Preparar transferencia de 1 bloque de 512 bytes
   sd_writel(SDMMC_BLKSIZ, SD_SECTOR_SIZE);
   sd_writel(SDMMC_BYTCNT, SD_SECTOR_SIZE);
 
   sd_clear_interrupts();
 
-  // CMD17 = READ_SINGLE_BLOCK.
+  // CMD17 = READ_SINGLE_BLOCK
   sd_send_cmd(17, arg, CMD_RESP_EXP | CMD_RESP_CRC | CMD_DAT_EXP);
 
   int words = SD_SECTOR_SIZE / 4;
@@ -327,7 +338,7 @@ sd_read_sector(uint64 lba, uchar *dst)
     if(r & INT_DATA_OVER){
       sd_writel(SDMMC_RINTSTS, INT_DATA_OVER | INT_RXDR | INT_FRUN);
 
-      printf("sd_read_sector: OK lba=%lu first=%x %x %x %x\r\n",
+      SD_DEBUG("sd_read_sector: OK lba=%lu first=%x %x %x %x\r\n",
             lba, dst[0], dst[1], dst[2], dst[3]);
       return;
     }
@@ -427,7 +438,7 @@ sd_write_sector(uint64 lba, uchar *src)
       */
       sd_wait_data_idle();
 
-      printf("sd_write_sector: OK lba=%lu first=%x %x %x %x\r\n",
+      SD_DEBUG("sd_write_sector: OK lba=%lu first=%x %x %x %x\r\n",
             lba, src[0], src[1], src[2], src[3]);
       return;
     }
