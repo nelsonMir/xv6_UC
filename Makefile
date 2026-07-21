@@ -103,7 +103,8 @@ ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc.o \
-	$(TCCDIR)/xv6_alloc.o
+	$(TCCDIR)/xv6_alloc.o \
+	$(TCCDIR)/xv6_tokens.o
 
 #Las flags de los ficheros de TinyCC iran separadas 
 TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
@@ -123,7 +124,14 @@ $(U)/asxv6.o: $(U)/asxv6.c $(TCCDIR)/xv6_tcc.h
 $(TCCDIR)/xv6_tcc.o: \
 	$(TCCDIR)/xv6_tcc.c \
 	$(TCCDIR)/xv6_tcc.h \
-	$(TCCDIR)/xv6_alloc.h
+	$(TCCDIR)/xv6_alloc.h \
+	$(TCCDIR)/xv6_tokens.h
+
+#Se recompila la tabla cuando cambia el código o la lista original
+$(TCCDIR)/xv6_tokens.o: \
+	$(TCCDIR)/xv6_tokens.c \
+	$(TCCDIR)/xv6_tokens.h \
+	$(TCCDIR)/riscv64-tok.h
 
 # Se recompila el gestor cuando cambia su implementación o cabecera
 $(TCCDIR)/xv6_alloc.o: \

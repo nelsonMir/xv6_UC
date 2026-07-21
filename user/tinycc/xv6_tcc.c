@@ -4,6 +4,7 @@
 #include "user/user.h"
 
 #include "xv6_alloc.h"
+#include "xv6_tokens.h"
 #include "xv6_tcc.h"
 
 #define XV6_TCC_READ_CHUNK 4096
@@ -40,7 +41,7 @@ read_source_file(const char *path,
   }
 
   /*Añado un byte al final para terminar el contenido con cero
-y poder tratarlo posteriormente como una cadena*/
+  y poder tratarlo posteriormente como una cadena*/
 
   buffer = xv6_tcc_realloc(0, (unsigned long)st.size + 1);
   if(buffer == 0){
@@ -103,12 +104,24 @@ xv6_tcc_assemble(const char *input_path,
   if(result != XV6_TCC_OK)
     return result;
 
-  printf("asxv6: cargados %d bytes desde %s\n",
-         (int)source_size,
-         input_path);
+  printf("asxv6: cargados %d bytes desde %s\n", (int)source_size, input_path);
+
+  /*Compruebo que la tabla original de TinyCC ha generado
+  correctamente varios tokens representativos*/
+
+  if(xv6_tcc_find_token("addi") != TOK_ASM_addi ||
+    xv6_tcc_find_token("ld") != TOK_ASM_ld ||
+    xv6_tcc_find_token("ret") != TOK_ASM_ret ||
+    xv6_tcc_find_token("c.addi") != TOK_ASM_c_addi){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_TOKEN_TABLE;
+  }
+
+  printf("asxv6: tabla RISC-V de TinyCC cargada\n");
+  printf("asxv6: %d tokens disponibles\n", xv6_tcc_token_count());
 
   /*Libero ahora el texto porque todavía no he conectado
-el lexer y el parser de TinyCC*/
+  el lexer y el parser de TinyCC*/
 
   xv6_tcc_realloc(source, 0);
 

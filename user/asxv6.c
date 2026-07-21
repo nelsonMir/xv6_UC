@@ -64,6 +64,12 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+    if(result == XV6_TCC_ERR_TOKEN_TABLE){
+    fprintf(2,
+            "asxv6: la tabla RISC-V de TinyCC no es valida\n");
+    exit(1);
+  }
+
   if(result == XV6_TCC_ERR_NOT_READY){
     fprintf(2,
             "asxv6: el archivo se ha cargado correctamente\n");
