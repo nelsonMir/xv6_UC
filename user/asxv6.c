@@ -70,6 +70,12 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  if(result == XV6_TCC_ERR_ELF_ABI){
+    fprintf(2,
+            "asxv6: las definiciones ELF64 no son validas\n");
+    exit(1);
+  }
+
   if(result == XV6_TCC_ERR_NOT_READY){
     fprintf(2,
             "asxv6: el archivo se ha cargado correctamente\n");

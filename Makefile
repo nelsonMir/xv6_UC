@@ -104,7 +104,8 @@ ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc.o \
 	$(TCCDIR)/xv6_alloc.o \
-	$(TCCDIR)/xv6_tokens.o
+	$(TCCDIR)/xv6_tokens.o \
+	$(TCCDIR)/xv6_elf.o
 
 #Las flags de los ficheros de TinyCC iran separadas 
 TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
@@ -125,7 +126,15 @@ $(TCCDIR)/xv6_tcc.o: \
 	$(TCCDIR)/xv6_tcc.c \
 	$(TCCDIR)/xv6_tcc.h \
 	$(TCCDIR)/xv6_alloc.h \
-	$(TCCDIR)/xv6_tokens.h
+	$(TCCDIR)/xv6_tokens.h \
+	$(TCCDIR)/xv6_elf.h
+
+# Se recompueba la interfaz ELF cuando cambia el código importado
+$(TCCDIR)/xv6_elf.o: \
+	$(TCCDIR)/xv6_elf.c \
+	$(TCCDIR)/xv6_elf.h \
+	$(TCCDIR)/elf.h \
+	$(TCCDIR)/inttypes.h
 
 #Se recompila la tabla cuando cambia el código o la lista original
 $(TCCDIR)/xv6_tokens.o: \

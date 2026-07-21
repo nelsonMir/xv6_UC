@@ -4,6 +4,7 @@
 #include "user/user.h"
 
 #include "xv6_alloc.h"
+#include "xv6_elf.h"
 #include "xv6_tokens.h"
 #include "xv6_tcc.h"
 
@@ -119,6 +120,16 @@ xv6_tcc_assemble(const char *input_path,
 
   printf("asxv6: tabla RISC-V de TinyCC cargada\n");
   printf("asxv6: %d tokens disponibles\n", xv6_tcc_token_count());
+
+  /*Se comprueba que las estructuras ELF64 mantienen los tamaños
+  y valores esperados para un objeto relocatable RISC-V*/
+
+  if(xv6_tcc_check_elf_abi() < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_ELF_ABI;
+  }
+
+  printf("asxv6: definiciones ELF64 de TinyCC validadas\n");
 
   /*Libero ahora el texto porque todavía no he conectado
   el lexer y el parser de TinyCC*/
