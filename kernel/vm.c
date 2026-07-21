@@ -65,6 +65,38 @@ pagetable_t kvmmake(void)
        PTE_R | PTE_W | PTE_A | PTE_D);
 
   //fin mapeo hdmi 
+
+// Cadence USB3: OTG, xHCI y device.
+kvmmap(kpgtbl,
+       VF2_USB_OTG_BASE,
+       VF2_USB_OTG_BASE,
+       0x30000,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+
+kvmmap(kpgtbl,
+       VF2_USB_PHY_BASE,
+       VF2_USB_PHY_BASE,
+       0x10000,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+
+kvmmap(kpgtbl,
+       VF2_STG_CRG_BASE,
+       VF2_STG_CRG_BASE,
+       0x10000,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+
+kvmmap(kpgtbl,
+       VF2_STG_SYSCON_BASE,
+       VF2_STG_SYSCON_BASE,
+       PGSIZE,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+
+kvmmap(kpgtbl,
+       VF2_SYS_SYSCON_BASE,
+       VF2_SYS_SYSCON_BASE,
+       0x10000,
+       PTE_R | PTE_W | PTE_A | PTE_D);
+
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X | PTE_A | PTE_D);

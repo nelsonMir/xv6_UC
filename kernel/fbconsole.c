@@ -41,6 +41,8 @@
 #define FBCONSOLE_BACKGROUND     0x00000000U  // negro
 #define FBCONSOLE_FOREGROUND     0x00ffffffU  // blanco
 
+#include "atc_logo.h"
+
 /*
   Tabla ASCII básica 8x8.
  
@@ -315,6 +317,95 @@ fbconsole_fill_rect_locked(uint32 x,
 
   //El DC8200 lee el framebuffer mediante DMA, por lo que debe recibir la versión actualizada de este rectángulo
   hdmi_cache_clean_rect(x, y, width, height);
+}
+
+static void
+fbconsole_draw_rle_logo_locked(
+  uint32 destination_x,
+  uint32 destination_y,
+  uint32 logo_width,
+  uint32 logo_height,
+  const uint32 runs[][2],
+  uint32 run_count
+)
+{
+  uint32 logo_x = 0;
+  uint32 logo_y = 0;
+
+  if(logo_width == 0 || logo_height == 0)
+    return;
+
+  for(uint32 run_index = 0;
+      run_index < run_count && logo_y < logo_height;
+      run_index++){
+
+    uint32 remaining = runs[run_index][0];
+    uint32 color = runs[run_index][1];
+
+    while(remaining > 0 && logo_y < logo_height){
+      //Número de píxeles de este run que caben en la fila actual del logo
+      uint32 chunk = logo_width - logo_x;
+
+      if(chunk > remaining)
+        chunk = remaining;
+
+      //Dibujar solamente la parte que cae dentro del framebuffer
+      if(destination_y + logo_y < HDMI_FB_HEIGHT &&
+         destination_x + logo_x < HDMI_FB_WIDTH){
+
+        uint32 visible = chunk;
+
+        if(destination_x + logo_x + visible >
+           HDMI_FB_WIDTH){
+
+          visible =
+            HDMI_FB_WIDTH -
+            (destination_x + logo_x);
+        }
+
+        uint64 framebuffer_offset =
+          ((uint64)(destination_y + logo_y) *
+           HDMI_FB_WIDTH) +
+          destination_x +
+          logo_x;
+
+        for(uint32 i = 0; i < visible; i++)
+          fbcons.framebuffer[framebuffer_offset + i] =
+            color;
+      }
+
+      logo_x += chunk;
+      remaining -= chunk;
+
+      if(logo_x >= logo_width){
+        logo_x = 0;
+        logo_y++;
+      }
+    }
+  }
+
+  asm volatile("fence rw, rw" ::: "memory");
+
+  //Limitar también el rectángulo que se entrega a la limpieza de caché
+  if(destination_x < HDMI_FB_WIDTH &&
+     destination_y < HDMI_FB_HEIGHT){
+
+    uint32 clean_width = logo_width;
+    uint32 clean_height = logo_height;
+
+    if(destination_x + clean_width > HDMI_FB_WIDTH)
+      clean_width = HDMI_FB_WIDTH - destination_x;
+
+    if(destination_y + clean_height > HDMI_FB_HEIGHT)
+      clean_height = HDMI_FB_HEIGHT - destination_y;
+
+    hdmi_cache_clean_rect(
+      destination_x,
+      destination_y,
+      clean_width,
+      clean_height
+    );
+  }
 }
 
 static const uint8 *
@@ -1243,6 +1334,51 @@ fbconsole_init(void)
     HDMI_FB_HEIGHT,
     FBCONSOLE_BACKGROUND
   );
+
+    fbconsole_fill_rect_locked(
+    0,
+    0,
+    HDMI_FB_WIDTH,
+    HDMI_FB_HEIGHT,
+    FBCONSOLE_BACKGROUND
+  );
+
+  uint32 logo_x = 0;
+  uint32 logo_y = 24;
+
+  /*
+   * Centrar horizontalmente.
+   */
+  if(HDMI_FB_WIDTH > ATC_LOGO_WIDTH)
+    logo_x =
+      (HDMI_FB_WIDTH - ATC_LOGO_WIDTH) / 2U;
+
+  fbconsole_draw_rle_logo_locked(
+    logo_x,
+    logo_y,
+    ATC_LOGO_WIDTH,
+    ATC_LOGO_HEIGHT,
+    atc_logo_rle,
+    ATC_LOGO_RUN_COUNT
+  );
+
+  //Situar la consola debajo del logo de la uc para que losprimeros mensajes no lo sobrescriban
+  uint32 first_console_y =
+    logo_y +
+    ATC_LOGO_HEIGHT +
+    FBCONSOLE_CHAR_HEIGHT;
+
+  fbcons.column = 0;
+  fbcons.row =
+    first_console_y / FBCONSOLE_CHAR_HEIGHT;
+
+  if(fbcons.row >= FBCONSOLE_ROWS)
+    fbcons.row = FBCONSOLE_ROWS - 1U;
+
+  fbcons.saved_column = fbcons.column;
+  fbcons.saved_row = fbcons.row;
+
+  fbconsole_cursor_show_locked();
 
   //Dibujar el cursor inicial en la esquina superior izquierda
   fbconsole_cursor_show_locked();

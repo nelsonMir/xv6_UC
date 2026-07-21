@@ -215,6 +215,7 @@ void            virtio_disk_init(void);
 void            virtio_disk_rw(struct buf *, int);
 void            virtio_disk_intr(void); */
 
+//NUEVO
 // sdcard.c
 void            sd_init(void);
 void            sd_rw(struct buf *, int);
@@ -222,11 +223,16 @@ void            sd_rw(struct buf *, int);
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
-//NUEVO
 //schedulers.c
 int             schedule_round_robin(struct cpu *);
 int             schedule_fcfs(struct cpu *);
 int             schedule_priority(struct cpu *);
+
+// vf2_usb.c
+void vf2_usb_init(void);
+
+// xhci.c
+void            xhci_probe(void);
 
 //NUEVO
 //DEBUG

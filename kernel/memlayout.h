@@ -54,6 +54,22 @@
 //El allocator solo puede utilizar memoria inferior al framebuffer.
 #define PHYSTOP FRAMEBUFFER_PA
 
+// USB3 Cadence del JH7110
+#define VF2_USB_OTG_BASE       0x10100000L
+#define VF2_USB_XHCI_BASE      0x10110000L
+#define VF2_USB_DEV_BASE       0x10120000L
+
+// PHY y registros auxiliares necesarios para encender USB
+#define VF2_USB_PHY_BASE       0x10200000L
+#define VF2_STG_CRG_BASE       0x10230000L
+#define VF2_STG_SYSCON_BASE    0x10240000L
+#define VF2_SYS_SYSCON_BASE    0x13030000L
+
+#define VF2_USB_HOST_IRQ       108
+
+// Interrupción host del Cadence USB3 según el DT usado por U-Boot
+#define USB_HOST_IRQ       108
+
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 #define TRAMPOLINE (MAXVA - PGSIZE)

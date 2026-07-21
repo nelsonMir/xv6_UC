@@ -37,6 +37,7 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("xv6-UC version kernel is booting\r\n");
     printf("\n");
 
+
     kinit();         // physical page allocator
     
     printf("kinit done\r\n");
@@ -45,6 +46,32 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("kernel_pagetable at %p\r\n", kernel_pagetable);
     kvminithart();   // turn on paging
     printf("kvminithart done\r\n");
+    /*pte_t *usb_pte;
+
+    usb_pte = walk(kernel_pagetable,
+                  VF2_STG_SYSCON_BASE,
+                  0);
+
+    if(usb_pte == 0)
+      panic("no USB STG PTE");
+
+    printf("USB PTE before=%p\n", (void *)*usb_pte);
+
+    *usb_pte |= PTE_A | PTE_D;
+
+    sfence_vma();
+    __sync_synchronize();
+
+    printf("USB PTE after=%p\n", (void *)*usb_pte);
+    printf("  valid=%d read=%d write=%d accessed=%d dirty=%d\n",
+          ((*usb_pte & PTE_V) != 0),
+          ((*usb_pte & PTE_R) != 0),
+          ((*usb_pte & PTE_W) != 0),
+          ((*usb_pte & PTE_A) != 0),
+          ((*usb_pte & PTE_D) != 0));
+
+    printf("  physical=%p\n",
+          (void *)PTE2PA(*usb_pte));*/
     procinit();      // process table
     printf("procinit done\r\n");
     trapinit();      // trap vectors
@@ -63,6 +90,10 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("plicinit done\r\n");
     plicinithart();  // ask PLIC for device interrupts
     printf("plicinithart done\r\n");
+    vf2_usb_init();
+    printf("vf2_usb_init done\r\n");
+    xhci_probe();
+    printf("xhci_probe done\r\n");
     binit();         // buffer cache
     printf("binit done\r\n");
     iinit();         // inode table
