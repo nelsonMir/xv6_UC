@@ -102,7 +102,8 @@ ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 # Aquí irán todos los objetos que forman el ensamblador
 ASXV6_OBJS = \
 	$(U)/asxv6.o \
-	$(TCCDIR)/xv6_tcc.o
+	$(TCCDIR)/xv6_tcc.o \
+	$(TCCDIR)/xv6_alloc.o
 
 #Las flags de los ficheros de TinyCC iran separadas 
 TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
@@ -121,7 +122,13 @@ $(U)/asxv6.o: $(U)/asxv6.c $(TCCDIR)/xv6_tcc.h
 # Se recompila la capa de TInyCC cuando cambia la cabecera
 $(TCCDIR)/xv6_tcc.o: \
 	$(TCCDIR)/xv6_tcc.c \
-	$(TCCDIR)/xv6_tcc.h
+	$(TCCDIR)/xv6_tcc.h \
+	$(TCCDIR)/xv6_alloc.h
+
+# Se recompila el gestor cuando cambia su implementación o cabecera
+$(TCCDIR)/xv6_alloc.o: \
+	$(TCCDIR)/xv6_alloc.c \
+	$(TCCDIR)/xv6_alloc.h
 
 # Se enlaza asxv6 con todos los objetos del port de tinyCC
 $(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)

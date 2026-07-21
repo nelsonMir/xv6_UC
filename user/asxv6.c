@@ -38,12 +38,37 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  if(result == XV6_TCC_ERR_STAT){
+    fprintf(2,
+            "asxv6: no se puede obtener el tamaño de %s\n",
+            input);
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_READ){
+    fprintf(2,
+            "asxv6: error leyendo %s\n",
+            input);
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_MEMORY){
+    fprintf(2,
+            "asxv6: no hay memoria suficiente\n");
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_TOO_LARGE){
+    fprintf(2,
+            "asxv6: el archivo de entrada es demasiado grande\n");
+    exit(1);
+  }
+
   if(result == XV6_TCC_ERR_NOT_READY){
     fprintf(2,
-            "asxv6: archivo %s abierto correctamente\n",
-            input);
+            "asxv6: el archivo se ha cargado correctamente\n");
     fprintf(2,
-            "asxv6: el nucleo de TinyCC aun no esta integrado\n");
+            "asxv6: el parser de TinyCC aun no esta integrado\n");
     exit(1);
   }
 
