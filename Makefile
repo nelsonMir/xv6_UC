@@ -1,5 +1,7 @@
 K=kernel
 U=user
+TCCDIR=$(U)/tinycc
+#se agrega la ruta al directorio con los ficheros del compilador tinyCC
 
 OBJS = \
   $K/entry.o \
@@ -97,6 +99,37 @@ tags: $(OBJS) _init
 
 ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 
+# Aquí irán todos los objetos que forman el ensamblador
+ASXV6_OBJS = \
+	$(U)/asxv6.o \
+	$(TCCDIR)/xv6_tcc.o
+
+#Las flags de los ficheros de TinyCC iran separadas 
+TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
+
+# Yo compilo cualquier archivo C situado en user/tinycc
+$(TCCDIR)/%.o: $(TCCDIR)/%.c
+	$(CC) $(TCC_CFLAGS) -c -o $@ $<
+
+#la compilación de los ficheros en el directorio user/tinycc
+$(TCCDIR)/%.o: $(TCCDIR)/%.c
+	$(CC) $(TCC_CFLAGS) -c -o $@ $<
+
+# Se recompila el ensamblador asxv6 cuando cambia la interfaz con TinyCC
+$(U)/asxv6.o: $(U)/asxv6.c $(TCCDIR)/xv6_tcc.h
+
+# Se recompila la capa de TInyCC cuando cambia la cabecera
+$(TCCDIR)/xv6_tcc.o: \
+	$(TCCDIR)/xv6_tcc.c \
+	$(TCCDIR)/xv6_tcc.h
+
+# Se enlaza asxv6 con todos los objetos del port de tinyCC
+$(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/asxv6.asm
+	$(OBJDUMP) -t $@ | \
+		sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asxv6.sym
+
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
@@ -152,16 +185,19 @@ UPROGS=\
 	$U/_rawtest\
 	$U/_rvnano\
 	$U/_asxv6\
-	$U/_ldxv6\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
 
 -include kernel/*.d user/*.d
+-include $(TCCDIR)/*.d
+#Es necesaria esta segunda linea para incluir "user/tinycc/xv6_tcc.d
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
 	*/*.o */*.d */*.asm */*.sym \
+	$(TCCDIR)/*.o $(TCCDIR)/*.d \
+	$(TCCDIR)/*.asm $(TCCDIR)/*.sym \
 	$U/initcode $U/initcode.out $K/kernel fs.img \
 	mkfs/mkfs .gdbinit \
         $U/usys.S \
