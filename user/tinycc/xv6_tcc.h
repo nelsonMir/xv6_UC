@@ -15,6 +15,7 @@ los valores a devolver cuando ocurre un error del ensamblador.
 #define XV6_TCC_ERR_ELF_ABI   -8
 #define XV6_TCC_ERR_BACKEND   -9
 #define XV6_TCC_ERR_SECTION   -10
+#define XV6_TCC_ERR_EMIT      -11
 
  /*Esta función ensambla input_path (el fichero en esa dirección) y escribirá 
  un ELF relocatable en output_path. 

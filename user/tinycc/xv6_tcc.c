@@ -6,6 +6,7 @@
 #include "xv6_alloc.h"
 #include "xv6_backend.h"
 #include "xv6_elf.h"
+#include "xv6_emit.h"
 #include "xv6_section.h"
 #include "xv6_tokens.h"
 #include "xv6_tcc.h"
@@ -145,7 +146,7 @@ xv6_tcc_assemble(const char *input_path,
   printf("asxv6: %d registros disponibles\n",
          xv6_tcc_backend_register_count());
 
-    /*Se comprueba que una sección puede crecer, conservar sus
+  /*Se comprueba que una sección puede crecer, conservar sus
   datos y aplicar alineamiento interno*/
 
   if(xv6_tcc_check_section_model() < 0){
@@ -155,7 +156,17 @@ xv6_tcc_assemble(const char *input_path,
 
   printf("asxv6: modelo de secciones de TinyCC validado\n");
 
-  
+  /*Se comprueba que las instrucciones de 16 y 32 bits pueden
+  escribirse en una sección utilizando el formato little-endian*/
+
+  if(xv6_tcc_check_emitter() < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_EMIT;
+  }
+
+  printf("asxv6: emision de instrucciones validada\n");
+
+
   /*Libero ahora el texto porque todavía no he conectado
   el lexer y el parser de TinyCC*/
 

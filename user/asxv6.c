@@ -88,6 +88,12 @@ main(int argc, char *argv[])
     exit(1);
   }
 
+  if(result == XV6_TCC_ERR_EMIT){
+    fprintf(2,
+            "asxv6: no se pudieron emitir instrucciones\n");
+    exit(1);
+  }
+
   if(result == XV6_TCC_ERR_NOT_READY){
     fprintf(2,
             "asxv6: el archivo se ha cargado correctamente\n");
