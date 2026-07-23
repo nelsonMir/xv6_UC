@@ -76,9 +76,15 @@ main(int argc, char *argv[])
     exit(1);
   }
 
-    if(result == XV6_TCC_ERR_BACKEND){
+  if(result == XV6_TCC_ERR_BACKEND){
     fprintf(2,
             "asxv6: el backend RISC-V de TinyCC no es valido\n");
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_SECTION){
+    fprintf(2,
+            "asxv6: no se pudo inicializar una seccion ELF\n");
     exit(1);
   }
 
