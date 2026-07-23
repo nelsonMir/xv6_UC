@@ -105,7 +105,8 @@ ASXV6_OBJS = \
 	$(TCCDIR)/xv6_tcc.o \
 	$(TCCDIR)/xv6_alloc.o \
 	$(TCCDIR)/xv6_tokens.o \
-	$(TCCDIR)/xv6_elf.o
+	$(TCCDIR)/xv6_elf.o \
+	$(TCCDIR)/xv6_backend.o
 
 #Las flags de los ficheros de TinyCC iran separadas 
 TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
@@ -126,8 +127,15 @@ $(TCCDIR)/xv6_tcc.o: \
 	$(TCCDIR)/xv6_tcc.c \
 	$(TCCDIR)/xv6_tcc.h \
 	$(TCCDIR)/xv6_alloc.h \
+	$(TCCDIR)/xv6_backend.h \
 	$(TCCDIR)/xv6_tokens.h \
 	$(TCCDIR)/xv6_elf.h
+
+# Se recompila la comprobación cuando cambia el backend original
+$(TCCDIR)/xv6_backend.o: \
+	$(TCCDIR)/xv6_backend.c \
+	$(TCCDIR)/xv6_backend.h \
+	$(TCCDIR)/riscv64-asm.c
 
 # Se recompueba la interfaz ELF cuando cambia el código importado
 $(TCCDIR)/xv6_elf.o: \

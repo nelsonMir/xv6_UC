@@ -4,6 +4,7 @@
 #include "user/user.h"
 
 #include "xv6_alloc.h"
+#include "xv6_backend.h"
 #include "xv6_elf.h"
 #include "xv6_tokens.h"
 #include "xv6_tcc.h"
@@ -130,6 +131,18 @@ xv6_tcc_assemble(const char *input_path,
   }
 
   printf("asxv6: definiciones ELF64 de TinyCC validadas\n");
+
+  /*Se comprueba que el backend RISC-V original se ha incluido
+  correctamente con las definiciones*/
+
+  if(xv6_tcc_check_riscv_backend() < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_BACKEND;
+  }
+
+  printf("asxv6: backend RISC-V de TinyCC validado\n");
+  printf("asxv6: %d registros disponibles\n",
+         xv6_tcc_backend_register_count());
 
   /*Libero ahora el texto porque todavía no he conectado
   el lexer y el parser de TinyCC*/
