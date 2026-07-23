@@ -110,18 +110,30 @@ xv6_tcc_assemble(const char *input_path,
 
   printf("asxv6: cargados %d bytes desde %s\n", (int)source_size, input_path);
 
-  /*Compruebo que la tabla original de TinyCC ha generado
-  correctamente varios tokens representativos*/
+  /*Se comprueban tokens generales, directivas del ensamblador,
+  registros e instrucciones RISC-V*/
 
-  if(xv6_tcc_find_token("addi") != TOK_ASM_addi ||
-    xv6_tcc_find_token("ld") != TOK_ASM_ld ||
-    xv6_tcc_find_token("ret") != TOK_ASM_ret ||
-    xv6_tcc_find_token("c.addi") != TOK_ASM_c_addi){
+  if(xv6_tcc_find_token(".section") !=
+      TOK_ASMDIR_section ||
+    xv6_tcc_find_token(".globl") !=
+      TOK_ASMDIR_globl ||
+    xv6_tcc_find_token(".text") !=
+      TOK_ASMDIR_text ||
+    xv6_tcc_find_token("addi") !=
+      TOK_ASM_addi ||
+    xv6_tcc_find_token("a0") !=
+      TOK_ASM_a0 ||
+    xv6_tcc_find_token("zero") !=
+      TOK_ASM_zero ||
+    xv6_tcc_find_token("ret") !=
+      TOK_ASM_ret ||
+    xv6_tcc_find_token("c.addi") !=
+      TOK_ASM_c_addi){
     xv6_tcc_realloc(source, 0);
     return XV6_TCC_ERR_TOKEN_TABLE;
-  }
+}
 
-  printf("asxv6: tabla RISC-V de TinyCC cargada\n");
+  printf("asxv6: tabla completa de tokens de TinyCC cargada\n");
   printf("asxv6: %d tokens disponibles\n", xv6_tcc_token_count());
 
   /*Se comprueba que las estructuras ELF64 mantienen los tamaños

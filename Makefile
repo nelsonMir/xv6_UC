@@ -159,6 +159,7 @@ $(TCCDIR)/xv6_elf.o: \
 $(TCCDIR)/xv6_tokens.o: \
 	$(TCCDIR)/xv6_tokens.c \
 	$(TCCDIR)/xv6_tokens.h \
+	$(TCCDIR)/tcctok.h \
 	$(TCCDIR)/riscv64-tok.h
 
 # Se recompila el gestor cuando cambia su implementación o cabecera

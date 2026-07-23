@@ -9,38 +9,48 @@ tabla original que he utilizado para generar el enum*/
 static const char *const token_names[] = {
 
 #define DEF(token, text) text,
-#define DEF_ASM(name) DEF(TOK_ASM_##name, #name)
 
-#include "riscv64-tok.h"
+#include "tcctok.h"
 
-#undef DEF_ASM
 #undef DEF
+#undef DEF_ASM
+#undef DEF_ASMDIR
+#undef DEF_ATOMIC
 };
 
 int
 xv6_tcc_find_token(const char *text)
 {
-  int token;
+  int index;
 
   if(text == 0)
-    return XV6_TCC_TOKEN_INVALID;
+    return TOK_EOF;
 
-  //Se recorre la tabla hasta encontrar el nombre solicitado
-  for(token = 0; token < XV6_TCC_TOKEN_COUNT; token++){
-    if(strcmp(text, token_names[token]) == 0)
-      return token;
+  /*Se recorren los tokens generales, las directivas y los
+  tokens específicos de RISC-V*/
+
+  for(index = 0;
+      index < XV6_TCC_TOKEN_COUNT;
+      index++){
+    if(strcmp(text, token_names[index]) == 0)
+      return TOK_IDENT + index;
   }
 
-  return XV6_TCC_TOKEN_INVALID;
+  return TOK_EOF;
 }
 
 const char *
 xv6_tcc_token_name(int token)
 {
-  if(token < 0 || token >= XV6_TCC_TOKEN_COUNT)
+  int index;
+
+  if(token < TOK_IDENT ||
+     token >= XV6_TCC_TOKEN_END)
     return 0;
 
-  return token_names[token];
+  index = token - TOK_IDENT;
+
+  return token_names[index];
 }
 
 int
