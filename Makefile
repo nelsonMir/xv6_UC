@@ -104,6 +104,10 @@ ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc.o \
 	$(TCCDIR)/xv6_alloc.o \
+	$(TCCDIR)/xv6_tcc_runtime.o \
+	$(TCCDIR)/xv6_setjmp.o \
+	$(TCCDIR)/xv6_setjmp_asm.o \
+	$(TCCDIR)/xv6_tcc_input.o \
 	$(TCCDIR)/xv6_tokens.o \
 	$(TCCDIR)/xv6_elf.o \
 	$(TCCDIR)/xv6_backend.o \
@@ -113,12 +117,13 @@ ASXV6_OBJS = \
 #Las flags de los ficheros de TinyCC iran separadas 
 TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
 
-# Yo compilo cualquier archivo C situado en user/tinycc
-$(TCCDIR)/%.o: $(TCCDIR)/%.c
-	$(CC) $(TCC_CFLAGS) -c -o $@ $<
 
 #la compilación de los ficheros en el directorio user/tinycc
 $(TCCDIR)/%.o: $(TCCDIR)/%.c
+	$(CC) $(TCC_CFLAGS) -c -o $@ $<
+
+# compila la implementación RV64 con un nombre de objeto distinto
+$(TCCDIR)/xv6_setjmp_asm.o: $(TCCDIR)/xv6_setjmp.S
 	$(CC) $(TCC_CFLAGS) -c -o $@ $<
 
 # Se recompila el ensamblador asxv6 cuando cambia la interfaz con TinyCC
@@ -133,7 +138,34 @@ $(TCCDIR)/xv6_tcc.o: \
 	$(TCCDIR)/xv6_elf.h \
 	$(TCCDIR)/xv6_emit.h \
 	$(TCCDIR)/xv6_section.h \
+	$(TCCDIR)/xv6_setjmp.h \
+	$(TCCDIR)/xv6_tcc_input.h \
+	$(TCCDIR)/xv6_tcc_runtime.h \
 	$(TCCDIR)/xv6_tokens.h
+
+# Se recompila la entrada cuando cambia el núcleo léxico
+$(TCCDIR)/xv6_tcc_input.o: \
+	$(TCCDIR)/xv6_tcc_input.c \
+	$(TCCDIR)/xv6_tcc_input.h \
+	$(TCCDIR)/xv6_tcc_core.h \
+	$(TCCDIR)/xv6_tcc_runtime.h \
+	$(TCCDIR)/inttypes.h
+
+# Se recompila la prueba cuando cambia la interfaz del contexto
+$(TCCDIR)/xv6_setjmp.o: \
+	$(TCCDIR)/xv6_setjmp.c \
+	$(TCCDIR)/xv6_setjmp.h
+
+# Se recompila la rutina RV64 cuando cambia su definición
+$(TCCDIR)/xv6_setjmp_asm.o: \
+	$(TCCDIR)/xv6_setjmp.S \
+	$(TCCDIR)/xv6_setjmp.h
+
+# Se recompila el runtime cuando cambia la capa de memoria
+$(TCCDIR)/xv6_tcc_runtime.o: \
+	$(TCCDIR)/xv6_tcc_runtime.c \
+	$(TCCDIR)/xv6_tcc_runtime.h \
+	$(TCCDIR)/xv6_alloc.h
 
 # Se recompila el modelo cuando cambia alguna estructura ELF
 $(TCCDIR)/xv6_section.o: \

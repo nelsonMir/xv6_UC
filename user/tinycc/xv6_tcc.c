@@ -8,6 +8,9 @@
 #include "xv6_elf.h"
 #include "xv6_emit.h"
 #include "xv6_section.h"
+#include "xv6_setjmp.h"
+#include "xv6_tcc_input.h"
+#include "xv6_tcc_runtime.h"
 #include "xv6_tokens.h"
 #include "xv6_tcc.h"
 
@@ -109,6 +112,39 @@ xv6_tcc_assemble(const char *input_path,
     return result;
 
   printf("asxv6: cargados %d bytes desde %s\n", (int)source_size, input_path);
+
+  /*ccomprueba que las funciones de memoria esperadas por
+  TinyCC funcionan sobre el allocator adaptado a xv6*/
+
+  if(xv6_tcc_check_runtime() < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_RUNTIME;
+  }
+
+  printf("asxv6: runtime basico de TinyCC validado\n");
+
+  /*comprueba el mecanismo que permitirá regresar desde los
+  errores internos del lexer y del parser*/
+
+  if(xv6_tcc_check_setjmp() < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_SETJMP;
+  }
+
+  printf("asxv6: setjmp y longjmp para RV64 validados\n");
+
+  /*Se transforma la entrada de xv6 en la estructura que
+  utilizará el lexer original de TinyCC*/
+
+  if(xv6_tcc_check_input(
+       input_path,
+       source,
+       (unsigned long)source_size) < 0){
+    xv6_tcc_realloc(source, 0);
+    return XV6_TCC_ERR_INPUT_BUFFER;
+  }
+
+  printf("asxv6: entrada BufferedFile de TinyCC validada\n");
 
   /*Se comprueban tokens generales, directivas del ensamblador,
   registros e instrucciones RISC-V*/

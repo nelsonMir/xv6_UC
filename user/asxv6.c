@@ -64,7 +64,25 @@ main(int argc, char *argv[])
     exit(1);
   }
 
-    if(result == XV6_TCC_ERR_TOKEN_TABLE){
+  if(result == XV6_TCC_ERR_RUNTIME){
+    fprintf(2,
+            "asxv6: fallo en el runtime adaptado de TinyCC\n");
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_SETJMP){
+    fprintf(2,
+            "asxv6: fallo en setjmp o longjmp para RV64\n");
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_INPUT_BUFFER){
+    fprintf(2,
+            "asxv6: no se pudo preparar la entrada de TinyCC\n");
+    exit(1);
+  }
+
+  if(result == XV6_TCC_ERR_TOKEN_TABLE){
     fprintf(2,
             "asxv6: la tabla RISC-V de TinyCC no es valida\n");
     exit(1);
