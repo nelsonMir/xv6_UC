@@ -144,6 +144,12 @@ ASMTEST_OBJS = \
 	$(TCCDIR)/xv6_tcc_asm.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+#prueba registros, inmediatos y offset(base)
+OPERANDTEST_OBJS = \
+	$(U)/operandtest.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # Prueba independiente de los buffers y tablas ELF
 $(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
@@ -155,6 +161,12 @@ $(U)/_asmtest: $(ASMTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/asmtest.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asmtest.sym
+
+#prueba independiente registros, inmediatos y offset(base)
+$(U)/_operandtest: $(OPERANDTEST_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/operandtest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/operandtest.sym
 
 
 _%: %.o $(ULIB)
@@ -215,6 +227,7 @@ UPROGS=\
 	$U/_ldxv6\
 	$U/_elftest\
 	$U/_asmtest\
+	$U/_operandtest\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)

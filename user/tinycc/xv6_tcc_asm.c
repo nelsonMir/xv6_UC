@@ -21,6 +21,46 @@
 #include "user/user.h"
 #include "user/tinycc/xv6_tcc_asm.h"
 
+//longitud maxima de texto de un operando, un operando nunca sera tan grande pero por error un usuario podría esccribir algo muy grande 
+//y se debería poder procesar el error
+#define XV6_TCC_OPERAND_TEXT_MAX 128
+
+/*SIrve para asociar un nombre textual de un registro con su valor en dígito respectivamente
+Ósea, los registros se pueden escribir númericamente x0, x1... x31 pero también se pueden usar 
+los alias ABI:
+zero -> x0
+ra   -> x1
+sp   -> x2
+t0   -> x5
+fp   -> x8
+s0   -> x8
+a0   -> x10
+a7   -> x17
+t6   -> x31
+antes solo podíamos procesos los registros si ya venían como dítigos. AHora se pueden interpretar 
+tanto en formato x0...x31 como formato ABI */
+struct Xv6TccRegisterName {
+  const char *name;
+  int number;
+};
+
+/*Tabla de nombres de registros
+Cada nombre ABI se corresponde con un número real del registro.
+LE he puesto estático porque solo se puede ver en este archivo y es una constante 
+para no modificarla durante la ejecución. Hay registros que tiene dos nombres ABI:
+fp y s0 son el registro físico 8*/
+static const struct Xv6TccRegisterName register_names[] = {
+  { "zero", 0 }, { "ra", 1 }, { "sp", 2 }, { "gp", 3 },
+  { "tp", 4 }, { "t0", 5 }, { "t1", 6 }, { "t2", 7 },
+  { "s0", 8 }, { "fp", 8 }, { "s1", 9 }, { "a0", 10 },
+  { "a1", 11 }, { "a2", 12 }, { "a3", 13 }, { "a4", 14 },
+  { "a5", 15 }, { "a6", 16 }, { "a7", 17 }, { "s2", 18 },
+  { "s3", 19 }, { "s4", 20 }, { "s5", 21 }, { "s6", 22 },
+  { "s7", 23 }, { "s8", 24 }, { "s9", 25 }, { "s10", 26 },
+  { "s11", 27 }, { "t3", 28 }, { "t4", 29 }, { "t5", 30 },
+  { "t6", 31 }
+};
+
 //comprueba que sea un registro válido
 static int
 valid_register(int reg)
@@ -62,7 +102,266 @@ fits_signed(long value, int bits)
   return value >= minimum && value <= maximum;
 }
 
-/*Llamadas para codificar una instrucción según su tipo
+/*----------------------------------------------------------
+Ya se permite recibir operandos escritos como texto
+*/
+
+/*Esta función quita espacios de un registro ej: "   a0  " --> "a0"
+devuelve la cadena sin espacios en "Output"*/
+static int
+copy_trimmed(const char *text, char *output, int output_size)
+{
+  const char *begin; //apunta al primer caracter útil 
+  const char *end; //apuntará al siguiente caracteres después del último carácter útil
+  int length; //cantidad de caracteres a copiar
+
+  if(!text || !output || output_size <= 0)
+    return -1;
+
+  //se saltan espacios últiles mientras que el caracter actual sea un espacio o el tabulador
+  //al terminar el bucle, begin apunta al primer caracter.
+  //ósea se elimina los espacios iniciales: "   a0  " al final -> "a0  "
+  begin = text;
+  while(*begin == ' ' || *begin == '\t')
+    begin++;
+
+  //sacamos la longitud de la cadena Ej:
+  //"a0  " begin apunta a "a", pero hay 3 caracteres más, el 0 y 2 espaciones, entonces la longitud 
+  //total el 4, así que end=4
+  end = begin + strlen(begin);
+
+  //se elimnan los espacios finales "a0  " -> "a0", para ello hoy se va retrocediendo desde el final hasta ponerse 
+  //en el caracter juto después de 0 del a0
+  while(end > begin && (end[-1] == ' ' || end[-1] == '\t'))
+    end--;
+
+  //Calcula la longitud
+  length = end - begin;
+  if(length <= 0 || length >= output_size)
+    return -1;
+
+  memmove(output, begin, length); //copia la cadena en output
+  output[length] = 0; //agrega el caracter nulo al final de la cadena 
+  return 0;
+}
+
+/*COnvierte un registro textual (aquí ya se recibe el registro en formato de número pero al final es un string así que se debe convertir) en un número long: 
+EJ: esto acepta 
+"42" --> 42
+"-16"  --> -16
+"0x20" -->32
+"-0x20" --> -32
+"0b1010" --> 10
+"1_024" --> 1024 en este caso se ignorar las "_"
+DEvuleve el resultado en "result"*/
+int
+xv6_tcc_parse_integer(const char *text, long *result)
+{
+  char buffer[XV6_TCC_OPERAND_TEXT_MAX]; //array local para almacenar la copia del texto al quitar espacios
+  const char *cursor;
+  unsigned long value;
+  unsigned long maximum;
+  unsigned long limit;
+  int negative;
+  int base;
+  int digit_count;
+
+  //quita espacios
+  //compruebo que el puntero result no sea nulo y que el quitar espacios funcione
+  if(!result || copy_trimmed(text, buffer, sizeof(buffer)) < 0)
+    return -1;
+
+  //cursor para recorrer la cadena
+  cursor = buffer;
+
+  //procesa el signo, inicialmente supone que es positivo, por eso negative = 0;
+  negative = 0;
+  if(*cursor == '+' || *cursor == '-'){
+    negative = *cursor == '-';
+    cursor++;
+  }
+
+  //detecta la base numérica, se asume inicialmente que es base 10
+  base = 10;
+  //si inicia con 0x es base hexa, entonces omite ese prefijo y solo deja los numeros
+  if(cursor[0] == '0' && (cursor[1] == 'x' || cursor[1] == 'X')){
+    base = 16;
+    cursor += 2;
+    //si es base 2 ej 0b1010
+  } else if(cursor[0] == '0' &&
+            (cursor[1] == 'b' || cursor[1] == 'B')){
+    base = 2;
+    cursor += 2;
+  }
+
+
+  //variables para la conversión
+  value = 0; 
+  digit_count = 0; //cuenta numero de digitos leídos omitiendo signo
+  maximum = ~0UL >> 1; //se pone el máximo unsigned long desplazado un espacio a la derecha: 0UL es cero unsiged long 00000...000 y el ~ lo inverte todo a 1's y luego el >> 1 lo desplaza un espacio a la derecha 
+  //entonces 01111...11 --> máximo long positvo
+  limit = negative ? maximum + 1UL : maximum;
+
+  //bucle hasta llegar al caracter nulo del final de la cadena 
+  while(*cursor){
+    int digit;
+
+    //se ignoran los "_" entonces si el texto es 1_024 pasaría a -> 1024
+    if(*cursor == '_'){
+      cursor++;
+      continue;
+    }
+
+
+    //convierte un caracter en un dígito
+    if(*cursor >= '0' && *cursor <= '9')
+      digit = *cursor - '0'; //'7' - '0' = 7
+    //también con los hexadecimales tanto para mayuscula y minuscula
+    else if(*cursor >= 'a' && *cursor <= 'f')
+      digit = *cursor - 'a' + 10; //A–F
+    else if(*cursor >= 'A' && *cursor <= 'F')
+      digit = *cursor - 'A' + 10;
+    else
+      return -1;
+
+    //comoprueba que el digito es valido en la base actual (ya que un digito puede ser valido en una base pero no en otra)
+    if(digit >= base)
+      return -1;
+    if(value > (limit - (unsigned long)digit) / (unsigned long)base)
+      return -1;
+
+    //comprobacion desbordamiento
+    value = value * (unsigned long)base + (unsigned long)digit;
+    //aumenta el contador de dígitos
+    digit_count++;
+    //aumenta el cursor al sig digito
+    cursor++;
+  }
+
+  //conprueba que habia al menos 1 digito
+  if(digit_count == 0)
+    return -1;
+
+  //aplica signo
+  if(negative){
+    if(value == maximum + 1UL)
+      *result = -((long)maximum) - 1L;
+    else
+      *result = -(long)value;
+  } else {
+    *result = (long)value;
+  }
+
+  return 0;
+}
+
+/*Convierte el nombre de un registro en un número entre 0 y 31 
+permite aceptar 2 tipos de valores 
+nombres numéricos: x0, x1, ..., x31
+nombres ABI: zero, ra, sp, a0, s1, t6..*/
+int
+xv6_tcc_parse_register(const char *text, int *reg)
+{
+  char name[XV6_TCC_OPERAND_TEXT_MAX];
+  int i;
+
+  //quita espacios
+  if(!reg || copy_trimmed(text, name, sizeof(name)) < 0)
+    return -1;
+
+    //comprueba que el registro con nombre numerico es valido (formato x0...x31)
+    //para ello comprueba que los digitos despues de la "x" sean digitos validos
+  if(name[0] == 'x' && name[1] != 0){
+    long number;
+
+    for(i = 1; name[i] != 0; i++)
+      if(name[i] < '0' || name[i] > '9')
+        break;
+
+    if(name[i] == 0 && xv6_tcc_parse_integer(name + 1, &number) == 0 &&
+       number >= 0 && number <= 31){
+      *reg = (int)number;
+      return 0;
+    }
+  }
+
+  //si el nombre del registro está en formato ABI (sp, a1...)
+  for(i = 0;
+      i < (int)(sizeof(register_names) / sizeof(register_names[0]));
+      i++){
+    if(strcmp(name, register_names[i].name) == 0){
+      *reg = register_names[i].number;
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
+/*INterpreta operando con el formato "desplazamiento(registro)" Ejemplos:
+16(sp)
+-8(s0)
+0(a0)
+(sp)
+
+devuelve 2 valores: offset, el registro base
+EJ: 16(sp)
+offset = 16
+base_register = 2*/
+int
+xv6_tcc_parse_memory_operand(const char *text,
+                              long *offset, int *base_register)
+{
+  char buffer[XV6_TCC_OPERAND_TEXT_MAX];
+  char offset_text[XV6_TCC_OPERAND_TEXT_MAX];
+  char register_text[XV6_TCC_OPERAND_TEXT_MAX];
+  char *left; //puntero parentesis (
+  char *right;//puntero parentesis )
+  int offset_length;
+  int register_length;
+
+  if(!offset || !base_register ||
+     copy_trimmed(text, buffer, sizeof(buffer)) < 0)
+    return -1;
+
+  left = strchr(buffer, '(');
+  if(!left)
+    return -1;
+
+  right = strchr(left + 1, ')');
+  if(!right || right[1] != 0 || strchr(left + 1, '(') ||
+     strchr(right + 1, ')'))
+    return -1;
+
+  offset_length = left - buffer;
+  register_length = right - left - 1;
+  if(offset_length >= (int)sizeof(offset_text) ||
+     register_length <= 0 ||
+     register_length >= (int)sizeof(register_text))
+    return -1;
+
+  if(offset_length == 0){
+    offset_text[0] = '0';
+    offset_text[1] = 0;
+  } else {
+    memmove(offset_text, buffer, offset_length);
+    offset_text[offset_length] = 0;
+  }
+
+  memmove(register_text, left + 1, register_length);
+  register_text[register_length] = 0;
+
+  if(xv6_tcc_parse_integer(offset_text, offset) < 0)
+    return -1;
+  if(xv6_tcc_parse_register(register_text, base_register) < 0)
+    return -1;
+
+  return 0;
+}
+
+
+/*--------------------------------------------------------
+Llamadas para codificar una instrucción según su tipo
 LOs formatos son: R, I, S, B, U y J
 
 cada llamada devuelve la instrcción codificada en "*word", ósea 

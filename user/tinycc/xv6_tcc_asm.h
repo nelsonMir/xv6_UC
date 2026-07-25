@@ -4,13 +4,20 @@
   Codificación mínima de instrucciones RV64I inspirada en el modelo de
   emisores por formato de TinyCC riscv64-asm.c.
  
-  En esta etapa no se interpretan nombres de registros ni líneas de texto.
-  Las funciones reciben números de registro e inmediatos ya procesados.
+  Las fucnciones ya pueden procesar ellas misma el número de registro e inmediatos
+  para ello se añaden nombres de registros, enteros y operandos de memoria.
+Todavía no se busca el nombre de una instrucción en una tabla ni se procesan
+etiquetas o expresiones simbólicas
  */
 #ifndef XV6_TCC_ASM_H
 #define XV6_TCC_ASM_H
 
 #include "user/tinycc/xv6_tcc_elf.h"
+
+int xv6_tcc_parse_register(const char *text, int *reg);
+int xv6_tcc_parse_integer(const char *text, long *value);
+int xv6_tcc_parse_memory_operand(const char *text,
+                                 long *offset, int *base_register);
 
 int xv6_tcc_encode_r(uint opcode, uint funct3, uint funct7,
                      int rd, int rs1, int rs2, uint *word);
