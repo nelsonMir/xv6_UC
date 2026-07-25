@@ -9,6 +9,7 @@ xv6_tcc_as_core(char *input, char *output)
   fprintf(1, "  entrada: %s\n", input);
   fprintf(1, "  salida:  %s\n", output);
   fprintf(1, "  capa de buffers ELF: disponible\n");
-  fprintf(2, "asxv6: la codificacion RV64I comenzara en etapas posteriores\n");
+  fprintf(1, "  codificadores RV64I R/I/S/B/U/J: disponibles\n");
+  fprintf(2, "El parser de operandos se hará en el siguiente commit\n");
   return -1;
 }
