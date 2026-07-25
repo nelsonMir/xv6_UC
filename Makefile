@@ -103,13 +103,15 @@ ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc_as_entry.o \
-	$(TCCDIR)/xv6_tcc_as_core.o
+	$(TCCDIR)/xv6_tcc_as_core.o \
+	$(TCCDIR)/xv6_tcc_elf.o
 
 #Aquí van todos los objetos que forman el linker 
 LDXV6_OBJS = \
 	$(U)/ldxv6.o \
 	$(TCCDIR)/xv6_tcc_ld_entry.o \
-	$(TCCDIR)/xv6_tcc_ld_core.o
+	$(TCCDIR)/xv6_tcc_ld_core.o \
+	$(TCCDIR)/xv6_tcc_elf.o
 
 #programas de prueba 
 ASXV6_TESTS = \
@@ -124,10 +126,22 @@ $(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)
 	$(OBJDUMP) -S $@ > $(U)/asxv6.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asxv6.sym
 
+#se enlaza ldxv6 con los demás objetos del port de TInyCC
 $(U)/_ldxv6: $(LDXV6_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/ldxv6.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/ldxv6.sym
+
+#el objeto elf de prueba
+ELFTEST_OBJS = \
+	$(U)/elftest.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
+# Prueba independiente de los buffers y tablas ELF
+$(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/elftest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/elftest.sym
 
 
 _%: %.o $(ULIB)
@@ -186,6 +200,7 @@ UPROGS=\
 	$U/_rvnano\
 	$U/_asxv6\
 	$U/_ldxv6\
+	$U/_elftest\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)
