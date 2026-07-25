@@ -1,125 +1,44 @@
 #include "kernel/types.h"
 #include "user/user.h"
+#include "user/tinycc/xv6_tcc_entry.h"
 
-#include "tinycc/xv6_tcc.h"
+/*Programa de usuario para interactuar con el ensamblador que esta en tinyCC*/
 
+/*Imprime el uso correcto del comando, hay 2 formas de usarlo*/
 static void
 usage(void)
 {
-  fprintf(2, "uso: asxv6 -o salida.o entrada.s\n");
+  fprintf(2, "uso: asxv6 entrada.s -o salida.o\n");
+  fprintf(2, "     asxv6 -o salida.o entrada.s\n");
   exit(1);
 }
 
 int
-main(int argc, char *argv[])
+main(int argc, char **argv)
 {
-  const char *input;
-  const char *output;
-  int result;
+  char *input;
+  char *output;
 
+  //comprueba el número de argumentos, si es diferente de 4, imprime el uso correcto
   if(argc != 4)
     usage();
 
-  if(strcmp(argv[1], "-o") != 0)
+  /*Identifica las 2 formas de utilizar el comando y que esté bien puesto.
+  UNa vez comprobado, asigna en variables el fichero de entrada y el de salida */
+  if(strcmp(argv[1], "-o") == 0){
+    output = argv[2];
+    input = argv[3];
+  } else if(strcmp(argv[2], "-o") == 0){
+    input = argv[1];
+    output = argv[3];
+  } else {
     usage();
-
-  output = argv[2];
-  input = argv[3];
-
-  result = xv6_tcc_assemble(input, output);
-
-  if(result == XV6_TCC_OK){
-    printf("asxv6: objeto generado: %s\n", output);
-    exit(0);
+    return 1;
   }
 
-  if(result == XV6_TCC_ERR_INPUT){
-    fprintf(2, "asxv6: no se puede abrir %s\n", input);
+  /*Intenta generar el ensamblador llamando a la siguiente función del fichero núcleo/core del ensamblador
+  (el ensamblador en sí), si falla se sale*/
+  if(xv6_tcc_assemble_file(input, output) < 0)
     exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_STAT){
-    fprintf(2,
-            "asxv6: no se puede obtener el tamaño de %s\n",
-            input);
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_READ){
-    fprintf(2,
-            "asxv6: error leyendo %s\n",
-            input);
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_MEMORY){
-    fprintf(2,
-            "asxv6: no hay memoria suficiente\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_TOO_LARGE){
-    fprintf(2,
-            "asxv6: el archivo de entrada es demasiado grande\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_RUNTIME){
-    fprintf(2,
-            "asxv6: fallo en el runtime adaptado de TinyCC\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_SETJMP){
-    fprintf(2,
-            "asxv6: fallo en setjmp o longjmp para RV64\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_INPUT_BUFFER){
-    fprintf(2,
-            "asxv6: no se pudo preparar la entrada de TinyCC\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_TOKEN_TABLE){
-    fprintf(2,
-            "asxv6: la tabla RISC-V de TinyCC no es valida\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_ELF_ABI){
-    fprintf(2,
-            "asxv6: las definiciones ELF64 no son validas\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_BACKEND){
-    fprintf(2,
-            "asxv6: el backend RISC-V de TinyCC no es valido\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_SECTION){
-    fprintf(2,
-            "asxv6: no se pudo inicializar una seccion ELF\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_EMIT){
-    fprintf(2,
-            "asxv6: no se pudieron emitir instrucciones\n");
-    exit(1);
-  }
-
-  if(result == XV6_TCC_ERR_NOT_READY){
-    fprintf(2,
-            "asxv6: el archivo se ha cargado correctamente\n");
-    fprintf(2,
-            "asxv6: el parser de TinyCC aun no esta integrado\n");
-    exit(1);
-  }
-
-  fprintf(2, "asxv6: error interno desconocido\n");
-  exit(1);
+  exit(0);
 }

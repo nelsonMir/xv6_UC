@@ -102,109 +102,33 @@ ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
 # Aquí irán todos los objetos que forman el ensamblador
 ASXV6_OBJS = \
 	$(U)/asxv6.o \
-	$(TCCDIR)/xv6_tcc.o \
-	$(TCCDIR)/xv6_alloc.o \
-	$(TCCDIR)/xv6_tcc_runtime.o \
-	$(TCCDIR)/xv6_setjmp.o \
-	$(TCCDIR)/xv6_setjmp_asm.o \
-	$(TCCDIR)/xv6_tcc_input.o \
-	$(TCCDIR)/xv6_tokens.o \
-	$(TCCDIR)/xv6_elf.o \
-	$(TCCDIR)/xv6_backend.o \
-	$(TCCDIR)/xv6_section.o \
-	$(TCCDIR)/xv6_emit.o
+	$(TCCDIR)/xv6_tcc_as_entry.o \
+	$(TCCDIR)/xv6_tcc_as_core.o
 
-#Las flags de los ficheros de TinyCC iran separadas 
-TCC_CFLAGS = $(CFLAGS) -I$(TCCDIR)
+#Aquí van todos los objetos que forman el linker 
+LDXV6_OBJS = \
+	$(U)/ldxv6.o \
+	$(TCCDIR)/xv6_tcc_ld_entry.o \
+	$(TCCDIR)/xv6_tcc_ld_core.o
 
-
-#la compilación de los ficheros en el directorio user/tinycc
-$(TCCDIR)/%.o: $(TCCDIR)/%.c
-	$(CC) $(TCC_CFLAGS) -c -o $@ $<
-
-# compila la implementación RV64 con un nombre de objeto distinto
-$(TCCDIR)/xv6_setjmp_asm.o: $(TCCDIR)/xv6_setjmp.S
-	$(CC) $(TCC_CFLAGS) -c -o $@ $<
-
-# Se recompila el ensamblador asxv6 cuando cambia la interfaz con TinyCC
-$(U)/asxv6.o: $(U)/asxv6.c $(TCCDIR)/xv6_tcc.h
-
-# Se recompila la capa de TInyCC cuando cambia la cabecera
-$(TCCDIR)/xv6_tcc.o: \
-	$(TCCDIR)/xv6_tcc.c \
-	$(TCCDIR)/xv6_tcc.h \
-	$(TCCDIR)/xv6_alloc.h \
-	$(TCCDIR)/xv6_backend.h \
-	$(TCCDIR)/xv6_elf.h \
-	$(TCCDIR)/xv6_emit.h \
-	$(TCCDIR)/xv6_section.h \
-	$(TCCDIR)/xv6_setjmp.h \
-	$(TCCDIR)/xv6_tcc_input.h \
-	$(TCCDIR)/xv6_tcc_runtime.h \
-	$(TCCDIR)/xv6_tokens.h
-
-# Se recompila la entrada cuando cambia el núcleo léxico
-$(TCCDIR)/xv6_tcc_input.o: \
-	$(TCCDIR)/xv6_tcc_input.c \
-	$(TCCDIR)/xv6_tcc_input.h \
-	$(TCCDIR)/xv6_tcc_core.h \
-	$(TCCDIR)/xv6_tcc_runtime.h \
-	$(TCCDIR)/inttypes.h
-
-# Se recompila la prueba cuando cambia la interfaz del contexto
-$(TCCDIR)/xv6_setjmp.o: \
-	$(TCCDIR)/xv6_setjmp.c \
-	$(TCCDIR)/xv6_setjmp.h
-
-# Se recompila la rutina RV64 cuando cambia su definición
-$(TCCDIR)/xv6_setjmp_asm.o: \
-	$(TCCDIR)/xv6_setjmp.S \
-	$(TCCDIR)/xv6_setjmp.h
-
-# Se recompila el runtime cuando cambia la capa de memoria
-$(TCCDIR)/xv6_tcc_runtime.o: \
-	$(TCCDIR)/xv6_tcc_runtime.c \
-	$(TCCDIR)/xv6_tcc_runtime.h \
-	$(TCCDIR)/xv6_alloc.h
-
-# Se recompila el modelo cuando cambia alguna estructura ELF
-$(TCCDIR)/xv6_section.o: \
-	$(TCCDIR)/xv6_section.c \
-	$(TCCDIR)/xv6_section.h \
-	$(TCCDIR)/xv6_alloc.h \
-	$(TCCDIR)/elf.h
-
-# Se recompila la comprobación cuando cambia el backend original
-$(TCCDIR)/xv6_backend.o: \
-	$(TCCDIR)/xv6_backend.c \
-	$(TCCDIR)/xv6_backend.h \
-	$(TCCDIR)/riscv64-asm.c
-
-# Se recompueba la interfaz ELF cuando cambia el código importado
-$(TCCDIR)/xv6_elf.o: \
-	$(TCCDIR)/xv6_elf.c \
-	$(TCCDIR)/xv6_elf.h \
-	$(TCCDIR)/elf.h \
-	$(TCCDIR)/inttypes.h
-
-#Se recompila la tabla cuando cambia el código o la lista original
-$(TCCDIR)/xv6_tokens.o: \
-	$(TCCDIR)/xv6_tokens.c \
-	$(TCCDIR)/xv6_tokens.h \
-	$(TCCDIR)/tcctok.h \
-	$(TCCDIR)/riscv64-tok.h
-
-# Se recompila el gestor cuando cambia su implementación o cabecera
-$(TCCDIR)/xv6_alloc.o: \
-	$(TCCDIR)/xv6_alloc.c \
-	$(TCCDIR)/xv6_alloc.h
+#programas de prueba 
+ASXV6_TESTS = \
+  $(U)/hello.s \
+  $(U)/inverso.s \
+  $(U)/two_main.s \
+  $(U)/two_func.s
 
 # Se enlaza asxv6 con todos los objetos del port de tinyCC
 $(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/asxv6.asm
-	$(OBJDUMP) -t $@ | \
-		sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asxv6.sym
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asxv6.sym
+
+$(U)/_ldxv6: $(LDXV6_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/ldxv6.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/ldxv6.sym
+
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $^
@@ -261,9 +185,10 @@ UPROGS=\
 	$U/_rawtest\
 	$U/_rvnano\
 	$U/_asxv6\
+	$U/_ldxv6\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
+	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)
 
 -include kernel/*.d user/*.d
 -include $(TCCDIR)/*.d
