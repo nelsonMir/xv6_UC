@@ -104,6 +104,7 @@ ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc_as_entry.o \
 	$(TCCDIR)/xv6_tcc_as_core.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
 #Aquí van todos los objetos que forman el linker 
@@ -137,11 +138,23 @@ ELFTEST_OBJS = \
 	$(U)/elftest.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+#prueba codificación instrcción
+ASMTEST_OBJS = \
+	$(U)/asmtest.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # Prueba independiente de los buffers y tablas ELF
 $(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/elftest.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/elftest.sym
+
+#prueba independiente codificación
+$(U)/_asmtest: $(ASMTEST_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/asmtest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asmtest.sym
 
 
 _%: %.o $(ULIB)
@@ -201,6 +214,7 @@ UPROGS=\
 	$U/_asxv6\
 	$U/_ldxv6\
 	$U/_elftest\
+	$U/_asmtest\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)
