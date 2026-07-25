@@ -20,15 +20,24 @@ struct Xv6TccElfBuffer {
   uint capacity;
 };
 
+/*Tabla de cadenas ELF "strab"
+
+UN archivo ELF necesita guardar nombres EJ: _Start, main, .text...
+
+Esos nombres no se almacenan en la cabecera ELF, sino que se guardan todos juntos en la tabla de cadenas ELF así:
+\0main\0mensaje\0_start\0*/
 struct Xv6TccElfStringTable {
   char *data;
   uint size;
   uint capacity;
 };
 
-/*Representa una entrada ELF64 de la tabla de símbolos*/
+/*Representa una entrada ELF64 de la tabla de símbolos "symtab"
+
+Cada una de estas entradas sirve para identificar al símbolo o cadena en la tabla de cadenas ELF*/
 struct Xv6TccElfSym {
-  uint st_name;
+  uint st_name; //no guarda el nombre del símbolo/cadena sino que el offset de éste en la tabla de cadenas ELF
+  //se guarda el offset y no punteros porque un fichero elf está en disco y no en memoria
   uchar st_info;
   uchar st_other;
   ushort st_shndx;
@@ -36,11 +45,12 @@ struct Xv6TccElfSym {
   uint64 st_size;
 };
 
-//Reprenta un relocación ELF64 con addend explícito 
+//Reprenta un relocación ELF64 con addend explícito (ósea que puede tener un valor adicional que puede particiar en el cálculo de la direción): ósea un símbolo del código que todavía 
+//no puede calcularse su dirección
 struct Xv6TccElfRela {
-  uint64 r_offset;
-  uint64 r_info;
-  long r_addend;
+  uint64 r_offset; //el offset de la sección donde debe hacerse la correción
+  uint64 r_info; //el símbolo + tipo de corrección
+  long r_addend; //valor adicional que puede particiar en el cálculo de la direción. EJ: .dword mensaje + 8 --> r_addend = 8
 };
 
 int xv6_tcc_section_add(struct Xv6TccElfBuffer *section,

@@ -73,6 +73,23 @@ xv6_tcc_section_add(struct Xv6TccElfBuffer *section,
   return 0;
 }
 
+/*Basada en put_elf_str() de TInyCC
+Añade una cadena a la tabla de cadenas ELF "strab",
+cada cadena inicia con \0
+
+parámetors:
+- la tabla de cadenas
+- la cadena
+- el offset: es el valor que devolverá que indica en donde comienza la cadena agregada en la tabla 
+
+EJ: posición: 0 1 2 3 4 5
+  contenido: \0 m a i n \0
+  
+  Agrego "message"
+  entonces quedaría 
+  posición: 0 1 2 3 4 5 6 7 8 9 10 11 12 13
+contenido: \0 m a i n \0 m e s s  a  g  e \0
+y el offset = 6*/
 int
 xv6_tcc_put_elf_str(struct Xv6TccElfStringTable *table,
                     const char *text, uint *offset)
@@ -93,6 +110,8 @@ xv6_tcc_put_elf_str(struct Xv6TccElfStringTable *table,
   return 0;
 }
 
+/*Guarda un símbolo en el buffer de símbolos "symtab" cuando ya se ha guardado 
+el offset en la tabla de cadenas ELF srtab*/
 int
 xv6_tcc_put_elf_sym_raw(struct Xv6TccElfBuffer *symtab,
                         uint name_offset, uint64 value, uint64 size,
@@ -119,6 +138,18 @@ xv6_tcc_put_elf_sym_raw(struct Xv6TccElfBuffer *symtab,
   return 0;
 }
 
+/*Guarda el símbolo en strtab (tabla de cadenas ELF) y la guarda en symtab(el buffer de símbolos)
+
+EJ: 
+"main"
+   ↓
+xv6_tcc_put_elf_str()
+   ↓
+name_offset = 1 (el offset es 1 porque el primer caracter es \0)
+   ↓
+xv6_tcc_put_elf_sym_raw()
+   ↓
+entrada Elf64_Sym*/
 int
 xv6_tcc_put_elf_sym(struct Xv6TccElfBuffer *symtab,
                     struct Xv6TccElfStringTable *strtab,
@@ -136,6 +167,8 @@ xv6_tcc_put_elf_sym(struct Xv6TccElfBuffer *symtab,
                                  info, other, shndx, index);
 }
 
+/*Crea una relocación Elf64_Rela, ósea un símbolo del código que todavía 
+no puede calcularse su dirección, cualdo el linker la conozca, deberá corregirla*/
 int
 xv6_tcc_put_elf_rela(struct Xv6TccElfBuffer *rela,
                      uint64 offset, uint64 info, long addend)
