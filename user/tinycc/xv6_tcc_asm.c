@@ -476,7 +476,7 @@ xv6_tcc_encode_b(uint opcode, uint funct3,
   return 0;
 }
 
-//fortmato J: instrcciones con inmediato con bits bits 31:12 -> rd, imm20
+//fortmato U: instrcciones con inmediato con bits bits 31:12 -> rd, imm20
 int
 xv6_tcc_encode_u(uint opcode, int rd, uint imm20, uint *word)
 {
