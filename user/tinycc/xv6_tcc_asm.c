@@ -68,7 +68,9 @@ valid_register(int reg)
   return reg >= 0 && reg <= 31;
 }
 
-//verifica que el operando sea correcto
+//verifica que la operación sea correcta
+//el código de la familia de la operación EJ: add --> "0x33"
+//al ser de 7 bits permite 2 a la 7 = 128 operaciones y RISCV necesita muchas más operaciones, por eso las operaciones se agrupan en familias
 static int
 valid_opcode(uint opcode)
 {
@@ -78,6 +80,7 @@ valid_opcode(uint opcode)
   1111111 -> 127 y 127 es 0x7f */
 }
 
+//selecciona una operación dentro de esa familia (ejemplo add y sub pertenecen a la misma opcode familia)
 static int
 valid_funct3(uint funct3)
 {
@@ -85,6 +88,7 @@ valid_funct3(uint funct3)
   /*funct3 tienen 3 bits entonces el valor máximo es 111 -> 0x7*/
 }
 
+//permiten distinguir operaciones que aún coinciden en el formato R
 static int
 valid_funct7(uint funct7)
 {
@@ -145,7 +149,8 @@ copy_trimmed(const char *text, char *output, int output_size)
   return 0;
 }
 
-/*COnvierte un registro textual (aquí ya se recibe el registro en formato de número pero al final es un string así que se debe convertir) en un número long: 
+/*Es una función auxiliar utilizada por xv6_tcc_parse_register y xv6_tcc_parse_memory_operand.
+COnvierte un registro textual (aquí ya se recibe el registro en formato de número pero al final es un string así que se debe convertir) en un número long: 
 EJ: esto acepta 
 "42" --> 42
 "-16"  --> -16
@@ -153,7 +158,10 @@ EJ: esto acepta
 "-0x20" --> -32
 "0b1010" --> 10
 "1_024" --> 1024 en este caso se ignorar las "_"
-DEvuleve el resultado en "result"*/
+DEvuleve el resultado en "result"
+
+COmo dije lo usaré como auxiliar, porque aquí ya llega el registro solo como número pero en un string, las otras 2 funciones se encargarán de limpiar 
+para dejar solo los números pero en un string (quitan los prefijos o simplemente transforman EJ: sp --> 2)*/
 int
 xv6_tcc_parse_integer(const char *text, long *result)
 {
@@ -370,24 +378,32 @@ addi a0, zero, 42 ---> 0x02a00513
 
 */
 
-//fortmato R: instrcciones con registros
+//fortmato R: instrucciones con registros -> tres registros rd, rs1, rs2
+/*recibe los campos de la instrucción ya dividido en varias variables y devuelve 
+la instrucción codificada en binario en "word"*/
 int
 xv6_tcc_encode_r(uint opcode, uint funct3, uint funct7,
                  int rd, int rs1, int rs2, uint *word)
 {
+  //valido que cada uno de los campos de la instrucción sean válidos
   if(!word || !valid_opcode(opcode) || !valid_funct3(funct3) ||
      !valid_funct7(funct7) || !valid_register(rd) ||
      !valid_register(rs1) || !valid_register(rs2))
     return -1;
 
   *word = opcode |
-          ((uint)rd << 7) |
+          ((uint)rd << 7) | //el rd << 7 desplaza los bits en la var rd 7 posiciones a la izq
+                            //ej: antes 00000000 00000000 00000000 00001010
+                            //despues   00000000 00000000 00000101 00000000
+                            //esto se hace así porque en esta instrucción el campo rd ocupa los bits 11:7 (del 11 al 7)
+                            //el bit situado más a la derecha es el bit 0, el menos significativo, debo hacer un esquema en la memoria de la instrucción 
           (funct3 << 12) |
           ((uint)rs1 << 15) |
           ((uint)rs2 << 20) |
           (funct7 << 25);
 
-  /*Esta última operación hace un OR bit a bit, es decir, combina todos los bits para formar la palabra, ej: 
+  /*Esta última operación hace un OR bit a bit, es decir, combina todos los bits para formar la palabra utilizando 
+  los distintios argumentos ej: 
   inmediato: 0x02a00000
   rd:        0x00000500
   opcode:    0x00000013
@@ -396,7 +412,7 @@ xv6_tcc_encode_r(uint opcode, uint funct3, uint funct7,
   return 0;
 }
 
-//fortmato I: instrcciones con inmediato
+//fortmato I: instrcciones con inmediato -> dos registro y un inmediato rd, rs1, imm
 int
 xv6_tcc_encode_i(uint opcode, uint funct3,
                  int rd, int rs1, long imm, uint *word)
@@ -414,7 +430,7 @@ xv6_tcc_encode_i(uint opcode, uint funct3,
   return 0;
 }
 
-//fortmato S: stores
+//fortmato S: stores, registro fuente y memoria -> rs2, offset(rs1)
 int
 xv6_tcc_encode_s(uint opcode, uint funct3,
                  int rs1, int rs2, long imm, uint *word)
@@ -436,7 +452,7 @@ xv6_tcc_encode_s(uint opcode, uint funct3,
   return 0;
 }
 
-//fortmato B: branches
+//fortmato B: branches, dos registros y desplazamiento: rs1, rs2, imm
 int
 xv6_tcc_encode_b(uint opcode, uint funct3,
                  int rs1, int rs2, long imm, uint *word)
@@ -460,7 +476,7 @@ xv6_tcc_encode_b(uint opcode, uint funct3,
   return 0;
 }
 
-//fortmato J: instrcciones con inmediato con bits bits 31:12
+//fortmato J: instrcciones con inmediato con bits bits 31:12 -> rd, imm20
 int
 xv6_tcc_encode_u(uint opcode, int rd, uint imm20, uint *word)
 {
