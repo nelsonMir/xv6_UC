@@ -524,9 +524,11 @@ xv6_tcc_emit32(struct Xv6TccElfBuffer *section,
   if(!section || !offset)
     return -1;
 
+  //se reserva espacio en la sección para meter la información de la instrucción codificada
   if(xv6_tcc_section_add(section, 4, 4, &position) < 0)
     return -1;
 
+  //se mete la instrucciión codificada en su respectiva sección en little endian (al revés)
   section->data[position + 0] = word & 0xffU;
   section->data[position + 1] = (word >> 8) & 0xffU;
   section->data[position + 2] = (word >> 16) & 0xffU;

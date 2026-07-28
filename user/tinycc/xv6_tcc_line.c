@@ -182,7 +182,8 @@ remove_comment(char *text)
   }
 }
 
-/*Función auxilar llamada en valid_identifier para verificar que el carácter inicial de una etiqueta sea correcto (las etiquetas abarcan también las directivas).
+/*Función auxilar llamada en valid_identifier para verificar que el carácter inicial de una etiqueta sea correcto (ahora esta función tb se utiliza para validad símbolos/nombres simbólicos,
+las directivas por otro lado se validan con "find_directive()").
 UNa etiqueta puede comenzar por:
 - minusculas: a-z
 - maýusculas: A-Z
@@ -220,8 +221,8 @@ identifier_character(int character)
 }
 
 /*Función utililzada para comprobar que una etiqueta tenga un identificador válido*/
-static int
-valid_identifier(const char *text)
+int
+xv6_tcc_valid_identifier(const char *text)
 {
   int i;
 
@@ -480,7 +481,7 @@ xv6_tcc_parse_line(const char *text, struct Xv6TccParsedLine *line)
     //se eliminan los espacios alrededor del nombre de la etiqueta
     label = trim_text(cursor);
     //se comprueba que el nombre sea válido y que queda en el campo label de la struct de análisis de la isntrucción
-    if(!valid_identifier(label) || copy_name(label, line->label, sizeof(line->label)) < 0)
+    if(!xv6_tcc_valid_identifier(label) || copy_name(label, line->label, sizeof(line->label)) < 0)
       return -1;
 
     //en el struct de anális se marca que tiene una label 

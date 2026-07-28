@@ -12,7 +12,8 @@ xv6_tcc_as_core(char *input, char *output)
   fprintf(1, "  codificadores RV64I R/I/S/B/U/J: disponibles\n");
   fprintf(1, "  registros, inmediatos y offset(base): disponibles\n");
   fprintf(1, "  tabla RV64I y primeras pseudoinstrucciones: disponibles\n");
-  fprintf(1, "analizador de líneas listo:  lineas, comentarios, etiquetas y directivas disponibles\n");
-  fprintf(2, "aún falta tramaiento de los simbolos y relocaciones\n");
+  fprintf(1, "  analizador de líneas listo:  lineas, comentarios, etiquetas y directivas disponibles\n");
+  fprintf(1, "  simbolos y relocaciones BRANCH/JAL: disponibles en memoria\n");
+  fprintf(2, "  la escritura ELF64 ET_REL aún está pendiente\n");
   return -1;
 }

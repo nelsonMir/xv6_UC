@@ -56,6 +56,30 @@
 
 /*EL módulo ELF de tinyCC se usará tanto para el assembler como el linker*/
 
+int
+xv6_tcc_elf_st_info(int binding, int type)
+{
+  return ((binding & 0xf) << 4) | (type & 0xf);
+}
+
+uint64
+xv6_tcc_elf_r_info(uint symbol_index, uint relocation_type)
+{
+  return ((uint64)symbol_index << 32) | relocation_type;
+}
+
+uint
+xv6_tcc_elf_r_symbol(uint64 info)
+{
+  return (uint)(info >> 32);
+}
+
+uint
+xv6_tcc_elf_r_type(uint64 info)
+{
+  return (uint)info;
+}
+
 /*Redondea hacía arriba hasta el siguiente múltiplo de align */
 static uint
 align_up(uint value, uint align)
@@ -250,7 +274,7 @@ xv6_tcc_put_elf_rela(struct Xv6TccElfBuffer *rela,
   struct Xv6TccElfRela *entry;
   uint entry_offset;
 
-  //reservo espacio en el buffer con alineación a 24 bytes por sizeof(Xv6TccElfRela)
+  //reservo espacio en el buffer 24 bytes por sizeof(Xv6TccElfRela), la entrada comenzará alineada a 8 bytes
   if(xv6_tcc_section_add(rela, sizeof(*entry),
                          sizeof(uint64), &entry_offset) < 0)
     return -1;

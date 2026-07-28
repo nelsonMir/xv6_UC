@@ -14,7 +14,7 @@ las directivas todavía no modifican tablas de símbolos ni secciones ELF.
 EJ: loop: addi a0, a0, -1 # decrementar contador 
 normalmente la línea no será tan larga pero se pone un tamaño considerable para no utilizar memoria dinámica*/
 #define XV6_TCC_LINE_NAME_MAX 64 //longitud máxima de un nombre, ya sean etiquetas (loop, while), instrucciones (add, addi) y directivas (aquí van las secciones y otras directivas como 
-//.globl main, .word 42, .asciz "Hola"), las directivas siempre comienzan por "."
+//.globl main, .word 42, .asciz "Hola"), las directivas siempre comienzan por "." posteriormente he agregado que los símbolos también tiene cómo longiutd máxima esa constante
 #define XV6_TCC_LINE_OPERAND_MAX 128 //longitud máxima de texto de un operando
 #define XV6_TCC_LINE_MAX_OPERANDS 3 //número máximo de operandos en una instrucción. De momento solo permito 3 pero luego se permitirán más para cosas como .byte 1, 2, 3, 4
 
@@ -34,6 +34,9 @@ struct Xv6TccParsedLine {
   int operand_count; //contador del número de operandos de la línea
   char operands[XV6_TCC_LINE_MAX_OPERANDS][XV6_TCC_LINE_OPERAND_MAX]; //es un array que guarda todos los operandos (como el límite de moemnto es 3 permite hasta 3 operandos)
 };
+
+//comprueba si una cadena puede utilizarse como identificardor de una etiqueta o símbolo
+int xv6_tcc_valid_identifier(const char *text);
 
 /*Recibe la línea original y devuelve la línea ya clasificada/analizada en el struct Xv6TccParsedLine*/
 int xv6_tcc_parse_line(const char *text,
