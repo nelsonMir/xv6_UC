@@ -19,12 +19,14 @@ struct Xv6TccElfBuffer {
   uint capacity; //capactiy: número de bytes que caben en la sección completa reservada de "data"
 };
 
-/*Tabla de cadenas ELF "strab". también vale para "shstrtab" ya que ambas tienen el mismo formato, son secuencias de carácteres terminadas por \0
+/*Tabla de cadenas ELF "strab". también vale para "shstrtab (section header string table)" ya que ambas tienen el mismo formato, son secuencias de carácteres terminadas por \0
 
-UN archivo ELF necesita guardar eitquetas EJ: _Start, main...
+UN archivo ELF necesita guardar eitquetas y eso se guarda en "strtab" EJ: _Start, main...
 
 Esos nombres no se almacenan en la cabecera ELF, sino que se guardan todos juntos en la tabla de cadenas ELF así:
-\0main\0mensaje\0_start\0*/
+\0main\0mensaje\0_start\0
+
+"shstrtab" guarda los nombres de lass secciones del archivo ELF ej: .text,.data,.bss,.symtab ---> \0.text\0.data\0.bss\0.symtab\0*/
 struct Xv6TccElfStringTable {
   char *data; //APUnta a la memorial real donde se almacena los bytes
   uint size;
@@ -61,8 +63,9 @@ struct Xv6TccElfSym {
 };
 
 /*Reprenta un relocación ELF64 con addend explícito (ósea que puede tener un valor adicional que puede particiar en el cálculo de la direción): Una relocación es una instrucción 
-para el linker que le indica que en ese lugar en concreto del código o de los datos donde hay un valor que debe recalcularse*/
-struct Xv6TccElfRela { //la siguiente explicación es válida para un objeto relocatable
+para el linker que le indica que en ese lugar en concreto del código o de los datos donde hay un valor que debe recalcularse.
+//la siguiente explicación de los campos es válida para un objeto relocatable*/
+struct Xv6TccElfRela { 
   uint64 r_offset; //el offset de la sección donde debe hacerse la correción. EJ: si la corección es de .text (.rela.text), si r_offset = 12 entonces la correción afecta a los bytes 
   //que comienzan en el offset 12 de la sección .text
   uint64 r_info; //el símbolo + tipo de corrección: 32 bits superiores el índice del símbolo y 32 bits inferiores el tipo de reloación

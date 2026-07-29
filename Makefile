@@ -104,6 +104,7 @@ ASXV6_OBJS = \
 	$(U)/asxv6.o \
 	$(TCCDIR)/xv6_tcc_as_entry.o \
 	$(TCCDIR)/xv6_tcc_as_core.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
 	$(TCCDIR)/xv6_tcc_object.o \
 	$(TCCDIR)/xv6_tcc_line.o \
 	$(TCCDIR)/xv6_tcc_insn.o \
@@ -177,6 +178,16 @@ SYMRELTEST_OBJS = \
 	$(TCCDIR)/xv6_tcc_asm.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+#prueba generación ELF en disco
+OBJWRITETEST_OBJS = \
+	$(U)/objwritetest.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
+	$(TCCDIR)/xv6_tcc_object.o \
+	$(TCCDIR)/xv6_tcc_line.o \
+	$(TCCDIR)/xv6_tcc_insn.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # Prueba independiente de los buffers y tablas ELF
 $(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
@@ -212,6 +223,12 @@ $(U)/_symreltest: $(SYMRELTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/symreltest.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/symreltest.sym
+
+#prueba generación ELF en disco
+$(U)/_objwritetest: $(OBJWRITETEST_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/objwritetest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/objwritetest.sym
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $^
@@ -275,6 +292,7 @@ UPROGS=\
 	$U/_insntest\
 	$U/_linetest\
 	$U/_symreltest\
+	$U/_objwritetest\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)

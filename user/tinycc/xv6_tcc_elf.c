@@ -153,7 +153,7 @@ xv6_tcc_section_add(struct Xv6TccElfBuffer *section,
 
 /*Basada en put_elf_str() de TInyCC
 Añade una cadena a la tabla de cadenas ELF "strab",
-cada cadena termina con \0
+cada cadena termina con \0. Devuelve el offset en donde inicia la cadena insertada
 
 parámetors:
 - la tabla de cadenas
