@@ -229,10 +229,12 @@ int             schedule_fcfs(struct cpu *);
 int             schedule_priority(struct cpu *);
 
 // vf2_usb.c
-void vf2_usb_init(void);
+void           vf2_usb_init(void);
+int           vf2_usb_start_host(void);
 
 // xhci.c
-void            xhci_probe(void);
+int           xhci_probe(void);
+int xhci_reset_controller(void);
 
 //NUEVO
 //DEBUG

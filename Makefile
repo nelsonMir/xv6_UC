@@ -37,6 +37,13 @@ linker = ./linker/vf2.ld
 endif
 
 # ============================================
+# codigos ensamblador prueba 
+# ============================================
+ASXV6_TESTS = \
+	$(U)/invertido.s \
+
+
+# ============================================
 #  Objetos del kernel
 # ============================================
 
@@ -197,9 +204,9 @@ $(U)/_%: $(U)/%.o $(ULIB)
 #  - Depende del BINARIO plano de initcode (para que quepa en 1 página)
 # ============================================
 
-fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode
+fs.img: mkfs/mkfs README $(UPROGS) $(U)/initcode $(ASXV6_TESTS)
 	cp $(U)/_init $(U)/init
-	mkfs/mkfs fs.img README $(UPROGS) $(U)/init
+	mkfs/mkfs fs.img README $(UPROGS) $(U)/init $(ASXV6_TESTS)
 
 # ============================================
 #  mkfs

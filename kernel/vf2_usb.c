@@ -59,6 +59,43 @@
 #define SYS_USB_SPLIT_OFFSET    0x18
 #define USB_PDRSTN_SPLIT        BIT(17)
 
+//Offsets del controlador DRD Cadence versión 0
+#define CDNS3_V0_OTGCMD              0x00
+#define CDNS3_V0_OTGSTS              0x04
+#define CDNS3_V0_OTGSTATE            0x08
+#define CDNS3_V0_OTGIVECT            0x14
+
+//Offsets del controlador DRD Cadence versión 1
+#define CDNS3_V1_DID                 0x00
+#define CDNS3_V1_RID                 0x04
+#define CDNS3_V1_OTGCMD              0x10
+#define CDNS3_V1_OTGSTS              0x14
+#define CDNS3_V1_OTGSTATE            0x18
+#define CDNS3_V1_OTGIVECT            0x24
+
+//Este registro tiene el mismo offset en las dos versiones
+#define CDNS3_OTG_SIMULATE           0x40
+
+//Bits del registro OTGCMD
+#define CDNS3_OTGCMD_HOST_BUS_REQ    (1U << 1)
+#define CDNS3_OTGCMD_OTG_DIS         (1U << 3)
+
+//Bits del registro OTGSTS
+#define CDNS3_OTGSTS_HOST_ACTIVE     (1U << 4)
+#define CDNS3_OTGSTS_OTG_NRDY        (1U << 11)
+#define CDNS3_OTGSTS_STRAP_SHIFT     12
+#define CDNS3_OTGSTS_STRAP_MASK      (7U << CDNS3_OTGSTS_STRAP_SHIFT)
+#define CDNS3_OTGSTS_XHCI_READY      (1U << 26)
+
+//Valores del campo STRAP
+#define CDNS3_STRAP_NO_DEFAULT       0
+#define CDNS3_STRAP_HOST_OTG         1
+#define CDNS3_STRAP_HOST             2
+#define CDNS3_STRAP_DEVICE           4
+
+//Número máximo de lecturas durante la activación del modo host
+#define CDNS3_HOST_POLL_LIMIT        5000000U
+
 static inline uint32
 mmio_read32(uint64 address)
 {
@@ -145,6 +182,61 @@ vf2_usb_wait_reset_deasserted(void)
   }
 
   return -1;
+}
+
+/*
+Espera hasta que el controlador Cadence indique que el bloque xHCI
+está preparado para funcionar como host.
+
+La función devuelve 0 cuando XHCI_READY se activa.
+Devuelve -1 si se supera el límite de espera.
+*/
+static int
+vf2_usb_wait_xhci_ready(uint64 status_address)
+{
+  uint32 status;
+  uint32 i;
+
+  status = 0;
+
+  for(i = 0; i < CDNS3_HOST_POLL_LIMIT; i++){
+    status = mmio_read32(status_address);
+
+    if(status & CDNS3_OTGSTS_XHCI_READY)
+      return 0;
+
+    __asm__ volatile("nop");
+  }
+
+  printf("usb: timeout waiting for XHCI_READY\n");
+  printf("usb: OTGSTS=0x%x\n", status);
+
+  return -1;
+}
+
+
+/*
+Muestra el contenido del registro de estado del controlador DRD.
+
+Este registro permite comprobar el modo indicado por los straps,
+si el bloque host está activo y si el xHCI está preparado.
+*/
+static void
+vf2_usb_dump_drd_status(uint32 status)
+{
+  uint32 strap;
+
+  strap = (status & CDNS3_OTGSTS_STRAP_MASK)
+        >> CDNS3_OTGSTS_STRAP_SHIFT;
+
+  printf("usb: OTGSTS=0x%x\n", status);
+  printf("usb: strap=%d host_active=%d xhci_ready=%d\n",
+         strap,
+         (status & CDNS3_OTGSTS_HOST_ACTIVE) != 0,
+         (status & CDNS3_OTGSTS_XHCI_READY) != 0);
+
+  printf("usb: otg_not_ready=%d\n",
+         (status & CDNS3_OTGSTS_OTG_NRDY) != 0);
 }
 
 void
@@ -245,4 +337,133 @@ vf2_usb_init(void)
     __asm__ volatile("nop");
 
   printf("usb: JH7110 wrapper ready\n");
+}
+
+int
+vf2_usb_start_host(void)
+{
+  uint32 first_register;
+  uint32 status;
+  uint32 command;
+  uint32 version;
+  uint32 revision;
+  uint64 command_address;
+  uint64 status_address;
+  uint64 state_address;
+  uint64 interrupt_vector_address;
+
+  printf("usb: initializing Cadence DRD host role\n");
+
+  /*
+  El primer registro permite distinguir las dos versiones del
+  controlador DRD Cadence.
+
+  En la versión 0 el primer registro es OTGCMD y su lectura inicial
+  devuelve cero.
+
+  En la versión 1 el primer registro contiene el identificador DID
+  y normalmente devuelve un valor distinto de cero.
+  */
+  first_register =
+    mmio_read32(VF2_USB_OTG_BASE + CDNS3_V1_DID);
+
+  if(first_register == 0){
+    printf("usb: Cadence DRD version 0 detected\n");
+
+    command_address =
+      VF2_USB_OTG_BASE + CDNS3_V0_OTGCMD;
+
+    status_address =
+      VF2_USB_OTG_BASE + CDNS3_V0_OTGSTS;
+
+    state_address =
+      VF2_USB_OTG_BASE + CDNS3_V0_OTGSTATE;
+
+    interrupt_vector_address =
+      VF2_USB_OTG_BASE + CDNS3_V0_OTGIVECT;
+  } else {
+    version =
+      mmio_read32(VF2_USB_OTG_BASE + CDNS3_V1_DID);
+
+    revision =
+      mmio_read32(VF2_USB_OTG_BASE + CDNS3_V1_RID);
+
+    printf("usb: Cadence DRD version 1 detected\n");
+    printf("usb: DID=0x%x RID=0x%x\n",
+           version,
+           revision);
+
+    command_address =
+      VF2_USB_OTG_BASE + CDNS3_V1_OTGCMD;
+
+    status_address =
+      VF2_USB_OTG_BASE + CDNS3_V1_OTGSTS;
+
+    state_address =
+      VF2_USB_OTG_BASE + CDNS3_V1_OTGSTATE;
+
+    interrupt_vector_address =
+      VF2_USB_OTG_BASE + CDNS3_V1_OTGIVECT;
+  }
+
+  /*
+  El driver oficial escribe uno en SIMULATE durante la detección
+  e inicialización de la interfaz DRD.
+  */
+  mmio_write32(VF2_USB_OTG_BASE + CDNS3_OTG_SIMULATE,
+               1);
+
+  //Se eliminan las interrupciones pendientes del bloque DRD
+  mmio_write32(interrupt_vector_address,
+               0xffffffffU);
+
+  status = mmio_read32(status_address);
+
+  printf("usb: DRD status before host request\n");
+  vf2_usb_dump_drd_status(status);
+
+  if(status & CDNS3_OTGSTS_OTG_NRDY){
+    printf("usb: Cadence OTG controller is not ready\n");
+    return -1;
+  }
+
+  /*
+  Se solicita el bus para el motor host y se desactiva el
+  funcionamiento OTG dinámico.
+
+  Esta es la operación que faltaba antes de reiniciar el xHCI.
+  */
+  command = CDNS3_OTGCMD_HOST_BUS_REQ |
+            CDNS3_OTGCMD_OTG_DIS;
+
+  printf("usb: requesting Cadence host bus\n");
+  printf("usb: writing OTGCMD=0x%x at %p\n",
+         command,
+         (void *)command_address);
+
+  mmio_write32(command_address,
+               command);
+
+  /*
+  El xHCI no debe reiniciarse hasta que el wrapper Cadence
+  active el bit XHCI_READY.
+  */
+  if(vf2_usb_wait_xhci_ready(status_address) < 0){
+    printf("usb: Cadence host role did not start\n");
+    printf("usb: OTGSTATE=0x%x\n",
+           mmio_read32(state_address));
+    return -1;
+  }
+
+  status = mmio_read32(status_address);
+
+  printf("usb: DRD status after host request\n");
+  vf2_usb_dump_drd_status(status);
+
+  printf("usb: OTGSTATE=0x%x\n",
+         mmio_read32(state_address));
+
+  printf("usb: Cadence host role ready\n");
+
+  return 0;
 }
