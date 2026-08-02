@@ -62,7 +62,7 @@ struct Xv6TccElfHeader {
   ushort e_phnum; //otra cabecera del programa = 0
   ushort e_shentsize; //tamaño de la cabecera de cada sección = 64 (definida abajo)
   ushort e_shnum; //Número de secciones del ELF = 6 (null, .text, .rela.text, .symtab, .strtab, .shstrtab)
-  ushort e_shstrndx; //índice de la sección que contiene los nombres de las secciones (5 ---> shstrtab)
+  ushort e_shstrndx; //índice de la sección que contiene los nombres de las secciones (5 ---> shstrtab, aunque ese número puede variar, pero de momento así lo esoty construyendo)
 };
 
 /*Este struct representa el header de cada sección. Cada entrada será de 64 bytes*/

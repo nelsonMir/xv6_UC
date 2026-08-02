@@ -116,6 +116,7 @@ LDXV6_OBJS = \
 	$(U)/ldxv6.o \
 	$(TCCDIR)/xv6_tcc_ld_entry.o \
 	$(TCCDIR)/xv6_tcc_ld_core.o \
+	$(TCCDIR)/xv6_tcc_elf_reader.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
 #programas de prueba 
@@ -123,7 +124,8 @@ ASXV6_TESTS = \
   $(U)/hello.s \
   $(U)/inverso.s \
   $(U)/two_main.s \
-  $(U)/two_func.s
+  $(U)/two_func.s \
+  $(U)/stage9.s
 
 # Se enlaza asxv6 con todos los objetos del port de tinyCC
 $(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)
@@ -188,6 +190,17 @@ OBJWRITETEST_OBJS = \
 	$(TCCDIR)/xv6_tcc_asm.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+#prueba lectura linker del fichero objeto 
+ELFREADTEST_OBJS = \
+	$(U)/elfreadtest.o \
+	$(TCCDIR)/xv6_tcc_elf_reader.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
+	$(TCCDIR)/xv6_tcc_object.o \
+	$(TCCDIR)/xv6_tcc_line.o \
+	$(TCCDIR)/xv6_tcc_insn.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # Prueba independiente de los buffers y tablas ELF
 $(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
@@ -229,6 +242,12 @@ $(U)/_objwritetest: $(OBJWRITETEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/objwritetest.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/objwritetest.sym
+
+#prueba lectura linker del fichero objeto 
+$(U)/_elfreadtest: $(ELFREADTEST_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/elfreadtest.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/elfreadtest.sym
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $^
@@ -293,6 +312,7 @@ UPROGS=\
 	$U/_linetest\
 	$U/_symreltest\
 	$U/_objwritetest\
+	$U/_elfreadtest\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)
