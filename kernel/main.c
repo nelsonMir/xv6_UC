@@ -90,23 +90,10 @@ void main(unsigned long hartid, unsigned long dtb_pa)
     printf("plicinit done\r\n");
     plicinithart();  // ask PLIC for device interrupts
     printf("plicinithart done\r\n");
-    vf2_usb_init();
-    printf("vf2_usb_init done\n");
-
-    if(vf2_usb_start_host() < 0)
-      panic("Cadence host start failed");
-
-    printf("vf2_usb_start_host done\n");
-
-    if(xhci_probe() < 0)
-      panic("xhci probe failed");
-
-    printf("xhci_probe done\n");
-
-    if(xhci_reset_controller() < 0)
-      panic("xhci reset failed");
-
-    printf("xhci_reset_controller done\n");
+    if(vf2_usb_keyboard_init() < 0)
+  printf("vf2 USB keyboard initialization failed\n");
+else
+  printf("vf2 USB keyboard initialization done\n");
     binit();         // buffer cache
     printf("binit done\r\n");
     iinit();         // inode table

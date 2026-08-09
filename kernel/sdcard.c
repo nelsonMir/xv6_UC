@@ -21,7 +21,7 @@
 // Controlador microSD de VisionFive 2 / JH7110.
 #define SD_BASE MMC1
 
-// Offsets DesignWare MMC.
+// Offsets DesignWare MMC
 #define SDMMC_CTRL      0x000
 #define SDMMC_PWREN     0x004
 #define SDMMC_CLKDIV    0x008
@@ -52,7 +52,7 @@
 #define SDMMC_DATA_OLD  0x100
 #define SDMMC_DATA_NEW  0x200
 
-// CTRL bits.
+// CTRL bits
 #define CTRL_RESET       (1U << 0)
 #define CTRL_FIFO_RESET  (1U << 1)
 #define CTRL_DMA_RESET   (1U << 2)
@@ -60,7 +60,7 @@
 #define CTRL_DMA_ENABLE  (1U << 5)
 #define CTRL_USE_IDMAC   (1U << 25)
 
-// CMD bits.
+// CMD bits
 #define CMD_START        (1U << 31)
 #define CMD_USE_HOLD_REG (1U << 29)
 #define CMD_UPDATE_CLK   (1U << 21)
@@ -73,7 +73,7 @@
 #define CMD_RESP_EXP     (1U << 6)
 #define CMD_INDX(n)      ((n) & 0x1f)
 
-// RINTSTS bits.
+// RINTSTS bits
 #define INT_EBE          (1U << 15)
 #define INT_SBE          (1U << 13)
 #define INT_HLE          (1U << 12)
@@ -154,7 +154,7 @@ sd_wait_reset_clear(uint bits)
 static void
 sd_clear_interrupts(void)
 {
-  // En DW MMC, RINTSTS se limpia escribiendo 1s.
+  // En DW MMC, RINTSTS se limpia escribiendo 1s
   sd_writel(SDMMC_RINTSTS, 0xffffffff);
 }
 
@@ -164,24 +164,24 @@ sd_prepare_pio(void)
   uint ctrl = sd_readl(SDMMC_CTRL);
 
   // U-Boot puede haber dejado DMA/IDMAC activado.
-  // Para nuestro driver inicial queremos PIO puro.
+  // Para nuestro driver inicial queremos PIO puro
   ctrl &= ~CTRL_DMA_ENABLE;
   ctrl &= ~CTRL_USE_IDMAC;
   sd_writel(SDMMC_CTRL, ctrl);
 
-  // Resetear FIFO y DMA interno, pero NO resetear todo el controlador.
+  // Resetear FIFO y DMA interno, pero NO resetear todo el controlador
   sd_writel(SDMMC_CTRL, sd_readl(SDMMC_CTRL) | CTRL_FIFO_RESET | CTRL_DMA_RESET);
   sd_wait_reset_clear(CTRL_FIFO_RESET | CTRL_DMA_RESET);
 
-  // Sin interrupciones reales; usaremos polling.
+  // Sin interrupciones reales, se usara polling
   sd_writel(SDMMC_INTMASK, 0x0);
 
-  // Limpiar estado pendiente.
+  // Limpiar estado pendiente
   sd_clear_interrupts();
 
   // FIFO threshold conservador:
-  // TX watermark bajo, RX watermark bajo.
-  // Para empezar, RX watermark = 1 palabra.
+  // TX watermark bajo, RX watermark bajo
+  // Para empezar, RX watermark = 1 palabra
   sd_writel(SDMMC_FIFOTH, (1 << 16) | 0);
 }
 
@@ -235,7 +235,7 @@ sd_send_cmd(uint cmdidx, uint arg, uint flags)
     }
 
     if(r & INT_CMD_DONE){
-      // Limpiamos CMD_DONE.
+      // Limpiamos CMD_DONE
       sd_writel(SDMMC_RINTSTS, INT_CMD_DONE);
       return;
     }
@@ -363,13 +363,13 @@ sd_write_sector(uint64 lba, uchar *src)
 
   sd_prepare_pio();
 
-  // Preparar transferencia de 1 bloque de 512 bytes.
+  // Preparar transferencia de 1 bloque de 512 bytes
   sd_writel(SDMMC_BLKSIZ, SD_SECTOR_SIZE);
   sd_writel(SDMMC_BYTCNT, SD_SECTOR_SIZE);
 
   sd_clear_interrupts();
 
-  // CMD24 = WRITE_SINGLE_BLOCK.
+  // CMD24 = WRITE_SINGLE_BLOCK
   sd_send_cmd(24, arg,
               CMD_RESP_EXP | CMD_RESP_CRC | CMD_DAT_EXP | CMD_DAT_WR);
 
@@ -382,7 +382,7 @@ sd_write_sector(uint64 lba, uchar *src)
     uint fcnt = STATUS_FIFO_COUNT(status);
 
     /*
-      El FIFO tiene 32 palabras según HCON/driver Linux típico.
+      El FIFO tiene 32 palabras según HCON/driver Linux típico
       Dejamos margen: si hay menos de 31 palabras, escribimos.
      */
     if(fcnt < 31){
@@ -416,7 +416,7 @@ sd_write_sector(uint64 lba, uchar *src)
     }
   }
 
-  // Esperar fin de transferencia.
+  // Esperar fin de transferencia
   for(uint i = 0; i < SD_TIMEOUT; i++){
     uint r = sd_readl(SDMMC_RINTSTS);
 
@@ -431,10 +431,10 @@ sd_write_sector(uint64 lba, uchar *src)
       sd_writel(SDMMC_RINTSTS, INT_DATA_OVER | INT_TXDR | INT_FRUN);
 
       /*
-      * IMPORTANTE:
-      * DATA_OVER significa que el controlador terminó de transferir datos,
-      * pero la tarjeta puede seguir ocupada programando internamente el bloque.
-      * Si lanzamos otro CMD24 demasiado pronto, aparece RTO.
+       IMPORTANTE:
+       DATA_OVER significa que el controlador terminó de transferir datos,
+       pero la tarjeta puede seguir ocupada programando internamente el bloque.
+       Si lanzo otro CMD24 demasiado pronto, aparece RTO
       */
       sd_wait_data_idle();
 

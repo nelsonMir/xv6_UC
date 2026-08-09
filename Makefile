@@ -79,8 +79,13 @@ OBJS = \
   $(K)/initcode_blob.o \
   $(K)/hdmi.o \
   $(K)/fbconsole.o \
-  $(K)/vf2_usb.o \
-  $(K)/xhci.o \
+  $(K)/vf2_pcie.o \
+  $(K)/vf2_pcie_vl805.o \
+  $(K)/usb_xhci_mem.o \
+  $(K)/usb_xhci_ring.o \
+  $(K)/usb_xhci.o \
+  $(K)/usb_enum.o \
+  $(K)/usb_kbd.o \
   #$(K)/fsimg_blob.o          # <— A PRUEBA DE BALAS: define fs_img y fs_img_len
 
 # Librerías de usuario

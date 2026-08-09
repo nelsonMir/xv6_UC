@@ -232,9 +232,22 @@ int             schedule_priority(struct cpu *);
 void           vf2_usb_init(void);
 int           vf2_usb_start_host(void);
 
-// xhci.c
-int           xhci_probe(void);
-int xhci_reset_controller(void);
+//vf2_pcie.c de la etapa 1
+int             vf2_pcie0_init(void);
+int             vf2_pcie0_link_up(void);
+
+//vf2_pcie_vl805.c
+int             vf2_pcie0_probe_vl805(void);
+uint64          vf2_pcie0_vl805_bar(void);
+int             vf2_usb_keyboard_init(void);
+
+//usb_xhci.c
+int             xhci_min_init(uint64);
+int             xhci_scan_root_ports(void);
+
+//usb_kbd.c
+void            usb_kbd_poll(void);
+int             usb_kbd_present(void);
 
 //NUEVO
 //DEBUG

@@ -40,7 +40,8 @@ main(int argc, char *argv[])
     unsigned char value = (unsigned char)c;
 
     /*
-     * Ctrl+Q = 17 = 0x11.
+      Ctrl+Q = 17 = 0x11
+      Secuencia para salir del editor
      */
     if(value == 17)
       break;

@@ -190,9 +190,14 @@ kerneltrap()
   w_sstatus(sstatus);
 }
 
-void
+int
 clockintr()
 {
+  static uint timer_divider;
+  int logical_tick;
+
+  logical_tick = 0;
+
   //monoprocesador, asi que el hart que sea va a aumentar los ticks
   //if(cpuid() == 0){
     acquire(&tickslock);
@@ -208,7 +213,40 @@ clockintr()
   // ask for the next timer interrupt. this also clears
   // the interrupt request. 1000000 is about a tenth
   // of a second.
-  sbi_set_timer(rdtime_safe() + 1000000);
+  sbi_set_timer(rdtime_safe() + 20000);
+
+  //Comprueba si el teclado USB ha entregado un informe HID
+  //Debe ejecutarse fuera de tickslock porque puede terminar llamando a consoleintr()
+  usb_kbd_poll();
+
+  /*
+  Conserva la duración anterior del tick lógico de xv6.
+
+  Antes:
+    1000000 ciclos = 250 ms.
+
+  Ahora:
+    50 interrupciones físicas x 5 ms = 250 ms.
+  */
+  timer_divider++;
+
+  if(timer_divider >= 50){
+    timer_divider = 0;
+
+    acquire(&tickslock);
+    ticks++;
+    wakeup(&ticks);
+    release(&tickslock);
+
+    logical_tick = 1;
+  }
+
+  /*
+  Devuelve uno solamente cuando ha transcurrido un tick lógico.
+  Las demás interrupciones solo sirven para atender rápidamente
+  el teclado USB.
+  */
+  return logical_tick;
 
 }
 
@@ -246,8 +284,35 @@ devintr(void)
     return 0;
 
   } else if (scause == 0x8000000000000005UL) {  // S-mode timer interrupt
-  clockintr();
-  return 2;
+  /*
+  clockintr() devuelve uno cada cincuenta interrupciones físicas.
+
+  Solo entonces devintr() devuelve 2 y usertrap()/kerneltrap()
+  pueden ejecutar yield().
+  */
+  if(clockintr())
+    return 2;
+
+  /*
+  Esta interrupción solo se ha utilizado para hacer polling
+  rápido del teclado. No debe provocar yield().
+  */
+  return 1;
+/*
+  clockintr() devuelve uno cada cincuenta interrupciones físicas.
+
+  Solo entonces devintr() devuelve 2 y usertrap()/kerneltrap()
+  pueden ejecutar yield().
+  */
+  if(clockintr())
+    return 2;
+
+  /*
+  Esta interrupción solo se ha utilizado para hacer polling
+  rápido del teclado. No debe provocar yield().
+  */
+  return 1;
+
 } else {
     return 0;
   }

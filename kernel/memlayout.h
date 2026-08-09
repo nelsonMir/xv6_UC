@@ -59,8 +59,14 @@
 #define VF2_USB_XHCI_BASE      0x10110000L
 #define VF2_USB_DEV_BASE       0x10120000L
 
+//PHY USB2 y USB3 del controlador Cadence
+#define VF2_USB2_PHY_BASE       0x10200000L
+#define VF2_USB3_PHY_BASE       0x10210000L
+
+//Clock generator principal del JH7110
+#define VF2_SYS_CRG_BASE        0x13020000L
+
 // PHY y registros auxiliares necesarios para encender USB
-#define VF2_USB_PHY_BASE       0x10200000L
 #define VF2_STG_CRG_BASE       0x10230000L
 #define VF2_STG_SYSCON_BASE    0x10240000L
 #define VF2_SYS_SYSCON_BASE    0x13030000L
@@ -69,6 +75,32 @@
 
 // Interrupción host del Cadence USB3 según el DT usado por U-Boot
 #define USB_HOST_IRQ       108
+
+//Registros APB del Root Port PLDA de PCIe0
+#define VF2_PCIE0_APB_BASE       0x2b000000L
+#define VF2_PCIE0_APB_SIZE       0x00100000L
+
+//Multi-PHY utilizado por PCIe0
+#define VF2_PCIE0_PHY_BASE       0x10210000L
+#define VF2_PCIE0_PHY_SIZE       0x00010000L
+
+//Controlador GPIO del dominio SYS
+#define VF2_SYS_GPIO_BASE        0x13040000L
+#define VF2_SYS_GPIO_SIZE        0x00010000L
+
+//Ventana ECAM utilizada para los buses PCIe 0 y 1
+#define VF2_PCIE0_CFG_BASE       0x940000000L
+#define VF2_PCIE0_CFG_SIZE       0x01000000L
+
+//Ventana PCI no prefetchable del Root Port
+#define VF2_PCIE0_MEM_BASE       0x30000000L
+#define VF2_PCIE0_MEM_SIZE       0x08000000L
+
+//El BAR del VL805 se asigna al comienzo de la ventana PCI
+#define VF2_VL805_MMIO_BASE      VF2_PCIE0_MEM_BASE
+#define VF2_VL805_MMIO_SIZE      0x00010000L
+
+#define VF2_PCIE0_IRQ            56
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.

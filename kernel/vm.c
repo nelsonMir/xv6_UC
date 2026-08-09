@@ -66,36 +66,66 @@ pagetable_t kvmmake(void)
 
   //fin mapeo hdmi 
 
-// Cadence USB3: OTG, xHCI y device.
-kvmmap(kpgtbl,
-       VF2_USB_OTG_BASE,
-       VF2_USB_OTG_BASE,
-       0x30000,
-       PTE_R | PTE_W | PTE_A | PTE_D);
+  // Cadence USB3: OTG, xHCI y device.
+  kvmmap(kpgtbl,
+        VF2_USB_OTG_BASE,
+        VF2_USB_OTG_BASE,
+        0x30000,
+        PTE_R | PTE_W | PTE_A | PTE_D);
 
-kvmmap(kpgtbl,
-       VF2_USB_PHY_BASE,
-       VF2_USB_PHY_BASE,
-       0x10000,
-       PTE_R | PTE_W | PTE_A | PTE_D);
+  //PHY USB2 en 0x10200000 y PHY USB3 en 0x10210000
+  kvmmap(kpgtbl,
+        VF2_USB2_PHY_BASE,
+        VF2_USB2_PHY_BASE,
+        0x20000,
+        PTE_R | PTE_W | PTE_A | PTE_D);
 
-kvmmap(kpgtbl,
-       VF2_STG_CRG_BASE,
-       VF2_STG_CRG_BASE,
-       0x10000,
-       PTE_R | PTE_W | PTE_A | PTE_D);
+  kvmmap(kpgtbl,
+        VF2_STG_CRG_BASE,
+        VF2_STG_CRG_BASE,
+        0x10000,
+        PTE_R | PTE_W | PTE_A | PTE_D);
 
-kvmmap(kpgtbl,
-       VF2_STG_SYSCON_BASE,
-       VF2_STG_SYSCON_BASE,
-       PGSIZE,
-       PTE_R | PTE_W | PTE_A | PTE_D);
+  kvmmap(kpgtbl,
+        VF2_STG_SYSCON_BASE,
+        VF2_STG_SYSCON_BASE,
+        PGSIZE,
+        PTE_R | PTE_W | PTE_A | PTE_D);
 
-kvmmap(kpgtbl,
-       VF2_SYS_SYSCON_BASE,
-       VF2_SYS_SYSCON_BASE,
-       0x10000,
-       PTE_R | PTE_W | PTE_A | PTE_D);
+  kvmmap(kpgtbl,
+        VF2_SYS_SYSCON_BASE,
+        VF2_SYS_SYSCON_BASE,
+        0x10000,
+        PTE_R | PTE_W | PTE_A | PTE_D);
+
+  //ECAM utilizado para leer el Root Port y el VIA VL805
+  kvmmap(kpgtbl,
+        VF2_PCIE0_CFG_BASE,
+        VF2_PCIE0_CFG_BASE,
+        VF2_PCIE0_CFG_SIZE,
+        PTE_R | PTE_W | PTE_A | PTE_D);
+
+  //BAR xHCI que este paquete asigna al VIA VL805
+  kvmmap(kpgtbl,
+        VF2_VL805_MMIO_BASE,
+        VF2_VL805_MMIO_BASE,
+        VF2_VL805_MMIO_SIZE,
+        PTE_R | PTE_W | PTE_A | PTE_D);
+
+  //Registros APB del Root Port PLDA de PCIe0
+  kvmmap(kpgtbl,
+        VF2_PCIE0_APB_BASE,
+        VF2_PCIE0_APB_BASE,
+        VF2_PCIE0_APB_SIZE,
+        PTE_R | PTE_W | PTE_A | PTE_D);
+
+
+  //GPIO26 utilizado para controlar PERST del VL805
+  kvmmap(kpgtbl,
+        VF2_SYS_GPIO_BASE,
+        VF2_SYS_GPIO_BASE,
+        VF2_SYS_GPIO_SIZE,
+        PTE_R | PTE_W | PTE_A | PTE_D);
 
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 
