@@ -1,10 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0+
+
 /*
 Basado en xhci-mem.c de U-Boot y en el controlador xHCI de Linux.
-Copyright (C) 2008 Intel Corp.
-Author: Sarah Sharp
-Copyright (C) 2013 Samsung Electronics Co.Ltd
-Authors: Vivek Gautam, Vikas Sajjan
+
 */
 
 /*
@@ -23,6 +20,18 @@ a su dirección del kernel, como ocurre en el mapeo directo de este port.
 #include "riscv.h"
 #include "defs.h"
 #include "usb_xhci.h"
+
+//flag debug 
+#ifndef DBG_XHCI
+#define DBG_XHCI 0
+#endif
+
+#define XHCI_DEBUG(...)            \
+  do {                             \
+    if(DBG_XHCI)                   \
+      printf(__VA_ARGS__);         \
+  } while(0)
+
 
 #define CCACHE_FLUSH64_OFFSET 0x0200U
 #define USB_DMA_64K_BOUNDARY  65536U
@@ -53,7 +62,7 @@ usb_dma_alloc(uint32 size, uint32 alignment)
   void *pointer;
 
   if(alignment == 0 || (alignment & (alignment - 1U)) != 0){
-    printf("usb-dma: invalid alignment=%d\n", (int)alignment);
+    XHCI_DEBUG("usb-dma: invalid alignment=%d\n", (int)alignment);
     return 0;
   }
 
@@ -69,7 +78,7 @@ usb_dma_alloc(uint32 size, uint32 alignment)
     start = usb_align_up(start, USB_DMA_64K_BOUNDARY);
 
   if(start > USB_DMA_AREA_SIZE || size > USB_DMA_AREA_SIZE - start){
-    printf("usb-dma: area exhausted used=%d request=%d\n",
+    XHCI_DEBUG("usb-dma: area exhausted used=%d request=%d\n",
            (int)usb_dma_used,
            (int)size);
     return 0;
@@ -212,7 +221,7 @@ xhci_mem_init(struct xhci_controller *controller)
   hcsparams2 = xhci_read32(controller->cap_base + XHCI_HCSPARAMS2);
   controller->scratchpad_count = xhci_scratchpad_count(hcsparams2);
 
-  printf("xhci: HCSPARAMS2=0x%lx scratchpads=%d page=%d\n",
+  XHCI_DEBUG("xhci: HCSPARAMS2=0x%lx scratchpads=%d page=%d\n",
          (uint64)hcsparams2,
          (int)controller->scratchpad_count,
          (int)controller->page_size);
@@ -264,14 +273,14 @@ xhci_mem_init(struct xhci_controller *controller)
                usb_dma_address(controller->event_ring.trbs));
   xhci_write32(interrupter + XHCI_IMOD, 0);
 
-  printf("xhci: DMA area=%p used=%d\n",
+  XHCI_DEBUG("xhci: DMA area=%p used=%d\n",
          (void *)usb_dma_area,
          (int)usb_dma_used);
-  printf("xhci: DCBAA=%p command=%p event=%p\n",
+  XHCI_DEBUG("xhci: DCBAA=%p command=%p event=%p\n",
          (void *)controller->dcbaa,
          (void *)controller->command_ring.trbs,
          (void *)controller->event_ring.trbs);
-  printf("xhci: scratchpads=%d\n",
+  XHCI_DEBUG("xhci: scratchpads=%d\n",
          (int)controller->scratchpad_count);
 
   return 0;
@@ -363,7 +372,7 @@ xhci_alloc_device(struct xhci_controller *controller,
   uint32 packet;
 
   if(slot_id == 0 || slot_id > USB_XHCI_MAX_SLOTS_USED){
-    printf("xhci: slot %d is outside the static device table\n",
+    XHCI_DEBUG("xhci: slot %d is outside the static device table\n",
            (int)slot_id);
     return -1;
   }
@@ -435,11 +444,11 @@ xhci_alloc_device(struct xhci_controller *controller,
   usb_dma_sync_for_device(device->input_context, input_size);
   usb_dma_sync_for_device(device->output_context, output_size);
 
-  printf("xhci: slot %d device context=%p input=%p\n",
+  XHCI_DEBUG("xhci: slot %d device context=%p input=%p\n",
          (int)slot_id,
          (void *)device->output_context,
          (void *)device->input_context);
-  printf("xhci: slot %d root=%d speed=%d route=0x%x tt-slot=%d tt-port=%d ep0=%d\n",
+  XHCI_DEBUG("xhci: slot %d root=%d speed=%d route=0x%x tt-slot=%d tt-port=%d ep0=%d\n",
          (int)slot_id,
          (int)root_port_id,
          (int)speed,

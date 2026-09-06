@@ -1,10 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0+
+
 /*
 Basado en xhci-ring.c de U-Boot y en el controlador xHCI de Linux.
-Copyright (C) 2008 Intel Corp.
-Author: Sarah Sharp
-Copyright (C) 2013 Samsung Electronics Co.Ltd
-Authors: Vivek Gautam, Vikas Sajjan
+
 */
 
 /*
@@ -20,6 +17,16 @@ control para enumerar el dispositivo e Interrupt IN para el teclado.
 #include "riscv.h"
 #include "defs.h"
 #include "usb_xhci.h"
+
+#ifndef DBG_XHCI
+#define DBG_XHCI 0
+#endif
+
+#define XHCI_DEBUG(...)            \
+  do {                             \
+    if(DBG_XHCI)                   \
+      printf(__VA_ARGS__);         \
+  } while(0)
 
 #define XHCI_EVENT_TIMEOUT_US 2000000U
 
@@ -201,7 +208,7 @@ xhci_wait_event(uint32 wanted_type,
     return 0;
   }
 
-  printf("xhci: timeout waiting event type=%d slot=%d ep=%d ptr=%p\n",
+  XHCI_DEBUG("xhci: timeout waiting event type=%d slot=%d ep=%d ptr=%p\n",
          (int)wanted_type,
          (int)wanted_slot,
          (int)wanted_endpoint,
@@ -248,7 +255,7 @@ xhci_submit_command(uint64 parameter,
 
   completion = xhci_trb_get_completion(event);
   if(completion != XHCI_CC_SUCCESS){
-    printf("xhci: command failed type=%d cc=%d\n",
+    XHCI_DEBUG("xhci: command failed type=%d cc=%d\n",
            (int)((control & XHCI_TRB_TYPE_MASK) >>
                  XHCI_TRB_TYPE_SHIFT),
            (int)completion);
@@ -271,11 +278,11 @@ xhci_command_enable_slot(uint32 *slot_id)
   *slot_id = event.control >> XHCI_TRB_SLOT_SHIFT;
 
   if(*slot_id == 0){
-    printf("xhci: Enable Slot returned slot zero\n");
+    XHCI_DEBUG("xhci: Enable Slot returned slot zero\n");
     return -1;
   }
 
-  printf("xhci: Enable Slot completed slot=%d\n", (int)*slot_id);
+  XHCI_DEBUG("xhci: Enable Slot completed slot=%d\n", (int)*slot_id);
   return 0;
 }
 
@@ -299,7 +306,7 @@ xhci_command_address_device(uint32 slot_id)
                          &event) < 0)
     return -1;
 
-  printf("xhci: Address Device completed slot=%d\n", (int)slot_id);
+  XHCI_DEBUG("xhci: Address Device completed slot=%d\n", (int)slot_id);
   return 0;
 }
 
@@ -323,7 +330,7 @@ xhci_command_evaluate_context(uint32 slot_id)
                          &event) < 0)
     return -1;
 
-  printf("xhci: Evaluate Context completed slot=%d\n", (int)slot_id);
+  XHCI_DEBUG("xhci: Evaluate Context completed slot=%d\n", (int)slot_id);
   return 0;
 }
 
@@ -347,7 +354,7 @@ xhci_command_configure_endpoint(uint32 slot_id)
                          &event) < 0)
     return -1;
 
-  printf("xhci: Configure Endpoint completed slot=%d\n", (int)slot_id);
+  XHCI_DEBUG("xhci: Configure Endpoint completed slot=%d\n", (int)slot_id);
   return 0;
 }
 
@@ -505,7 +512,7 @@ xhci_control_transfer(uint32 slot_id,
 
   completion = xhci_trb_get_completion(&event);
   if(!xhci_completion_ok(completion)){
-    printf("xhci: control transfer failed req=0x%x cc=%d\n",
+    XHCI_DEBUG("xhci: control transfer failed req=0x%x cc=%d\n",
            request,
            (int)completion);
     return -1;
@@ -575,7 +582,7 @@ xhci_poll_keyboard_transfer(uint32 slot_id,
 
     completion = xhci_trb_get_completion(&event);
     if(!xhci_completion_ok(completion)){
-      printf("usb-kbd: transfer failed cc=%d\n", (int)completion);
+      XHCI_DEBUG("usb-kbd: transfer failed cc=%d\n", (int)completion);
       return -1;
     }
 

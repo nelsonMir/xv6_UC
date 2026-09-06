@@ -119,13 +119,13 @@ pagetable_t kvmmake(void)
         VF2_PCIE0_APB_SIZE,
         PTE_R | PTE_W | PTE_A | PTE_D);
 
-
   //GPIO26 utilizado para controlar PERST del VL805
   kvmmap(kpgtbl,
         VF2_SYS_GPIO_BASE,
         VF2_SYS_GPIO_BASE,
         VF2_SYS_GPIO_SIZE,
         PTE_R | PTE_W | PTE_A | PTE_D);
+
 
   kvmmap(kpgtbl, PLIC, PLIC, 0x4000000, PTE_R | PTE_W | PTE_A | PTE_D);
 

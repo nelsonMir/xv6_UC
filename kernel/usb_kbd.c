@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0+
-/*
-Parte derivada del driver de teclado USB de U-Boot.
-(C) Copyright 2001 Denis Peter, MPL AG Switzerland.
-Partes derivadas del proyecto USB de Linux.
-*/
+
 
 /*
 usb_kbd.c
@@ -21,6 +16,17 @@ española y AltGr quedan aislados para una ampliación posterior.
 #include "riscv.h"
 #include "defs.h"
 #include "usb_xhci.h"
+
+//flag debug 
+#ifndef DBG_USB
+#define DBG_USB 0
+#endif
+
+#define USB_DEBUG(...)             \
+  do {                             \
+    if(DBG_USB)                    \
+      printf(__VA_ARGS__);         \
+  } while(0)
 
 #define HID_MOD_LEFT_CTRL   USB_BIT(0)
 #define HID_MOD_LEFT_SHIFT  USB_BIT(1)
@@ -236,7 +242,7 @@ usb_kbd_attach(uint32 slot_id,
   usb_keyboard.max_packet = max_packet;
   usb_keyboard.report_buffer = report_buffer;
 
-  printf("usb-kbd: attached slot=%d dci=%d packet=%d interval=%d\n",
+  USB_DEBUG("usb-kbd: attached slot=%d dci=%d packet=%d interval=%d\n",
          (int)slot_id,
          (int)endpoint_id,
          (int)max_packet,
@@ -273,7 +279,7 @@ usb_kbd_poll(void)
 
   if(result < 0){
     usb_keyboard.present = 0;
-    printf("usb-kbd: polling stopped after transfer error\n");
+    USB_DEBUG("usb-kbd: polling stopped after transfer error\n");
     goto out;
   }
 
@@ -295,7 +301,7 @@ usb_kbd_poll(void)
                              usb_keyboard.report_buffer,
                              usb_keyboard.max_packet) < 0){
     usb_keyboard.present = 0;
-    printf("usb-kbd: could not requeue Interrupt IN transfer\n");
+    USB_DEBUG("usb-kbd: could not requeue Interrupt IN transfer\n");
     goto out;
   }
 

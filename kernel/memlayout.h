@@ -54,6 +54,10 @@
 //El allocator solo puede utilizar memoria inferior al framebuffer.
 #define PHYSTOP FRAMEBUFFER_PA
 
+//GPIO 
+#define VF2_GPIO_BASE 0x13040000L
+#define VF2_GPIO_SIZE 0x00010000L
+
 // USB3 Cadence del JH7110
 #define VF2_USB_OTG_BASE       0x10100000L
 #define VF2_USB_XHCI_BASE      0x10110000L

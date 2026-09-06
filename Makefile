@@ -9,6 +9,7 @@ platform := vf2
 K = kernel
 U = user
 T = target
+TCCDIR = $(U)/tinycc
 
 # Herramientas de compilación cruzada
 TOOLPREFIX := riscv64-unknown-elf-
@@ -31,16 +32,53 @@ CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I. -Ikernel -Iuser -I$(CURDIR)/kernel -I$(CURDIR)/user
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
+# Flags para los ficheros ensamblador del kernel
+ASFLAGS = -march=rv64imafdc_zicsr_zifencei -mabi=lp64d
+
 # Linker script
 ifeq ($(platform), vf2)
 linker = ./linker/vf2.ld
 endif
 
 # ============================================
+#  ASXV6 / LDXV6
+#  Ensamblador y linker educativos RISC-V
+# ============================================
+
+# Objetos que forman el ensamblador asxv6
+ASXV6_OBJS = \
+	$(U)/asxv6.o \
+	$(TCCDIR)/xv6_tcc_as_entry.o \
+	$(TCCDIR)/xv6_tcc_as_core.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
+	$(TCCDIR)/xv6_tcc_object.o \
+	$(TCCDIR)/xv6_tcc_line.o \
+	$(TCCDIR)/xv6_tcc_insn.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
+
+# Objetos que forman el linker ldxv6
+LDXV6_OBJS = \
+	$(U)/ldxv6.o \
+	$(TCCDIR)/xv6_tcc_ld_entry.o \
+	$(TCCDIR)/xv6_tcc_ld_core.o \
+	$(TCCDIR)/xv6_tcc_exec_writer.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
+	$(TCCDIR)/xv6_tcc_link.o \
+	$(TCCDIR)/xv6_tcc_reloc.o \
+	$(TCCDIR)/xv6_tcc_layout.o \
+	$(TCCDIR)/xv6_tcc_elf_reader.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
+# ============================================
 # codigos ensamblador prueba 
 # ============================================
 ASXV6_TESTS = \
 	$(U)/invertido.s \
+  $(U)/berry_main.s \
+  $(U)/berry_leds.s \
+  $(U)/hello.s \
 
 
 # ============================================
@@ -86,6 +124,8 @@ OBJS = \
   $(K)/usb_xhci.o \
   $(K)/usb_enum.o \
   $(K)/usb_kbd.o \
+  $(K)/vf2_gpio.o \
+  $(K)/sysgpio.o \
   #$(K)/fsimg_blob.o          # <— A PRUEBA DE BALAS: define fs_img y fs_img_len
 
 # Librerías de usuario
@@ -120,6 +160,15 @@ UPROGS = \
   $(U)/_benchsched \
   $(U)/_rawtest \
   $(U)/_rvnano \
+  $(U)/_asxv6 \
+  $(U)/_ldxv6 \
+
+# ============================================
+#  Ensamblador del kernel
+# ============================================
+
+$(K)/%.o: $(K)/%.S
+	$(CC) $(ASFLAGS) -c -o $@ $<
 
 # ============================================
 #  Kernel final (ELF + bin) y símbolos
@@ -198,6 +247,21 @@ $(U)/umalloc.o: $(U)/umalloc.c
 $(U)/init.o: $(U)/init.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# ============================================
+#  Reglas especificas de ASXV6 / LDXV6
+# ============================================
+
+$(U)/_asxv6: $(ASXV6_OBJS) $(ULIB)
+	$(LD) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/asxv6.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/asxv6.sym
+
+
+$(U)/_ldxv6: $(LDXV6_OBJS) $(ULIB)
+	$(LD) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/ldxv6.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/ldxv6.sym
+
 # Enlazado genérico de userland a ELF con user.ld
 $(U)/_%: $(U)/%.o $(ULIB)
 	$(LD) -T $(U)/user.ld -o $@ $^
@@ -241,14 +305,16 @@ qemu: $(T)/kernel fs.img
 clean:
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg
 	rm -f */*.o */*.d */*.asm */*.sym
+	rm -f $(TCCDIR)/*.o $(TCCDIR)/*.d
 	rm -f $(T)/kernel $(T)/kernel.bin $(T)/kernel.asm $(T)/kernel.sym
 	rm -f fs.img
 	rm -f $(U)/usys.S $(UPROGS)
 	rm -f $(U)/init $(U)/initcode $(U)/initcode.o $(U)/initcode.elf
 	rm -f kernel/initcode_blob.c $(K)/initcode_blob.o
-	rm -f kernel/fsimg_blob.c  $(K)/fsimg_blob.o
+	rm -f kernel/fsimg_blob.c $(K)/fsimg_blob.o
 
 # ============================================
 #  Dependencias de .d (auto-includes)
 # ============================================
 -include $(wildcard */*.d)
+-include $(wildcard $(TCCDIR)/*.d)

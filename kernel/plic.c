@@ -21,7 +21,7 @@ plicinit(void)
   *(volatile uint32 *)(PLIC_PRIORITY + UART0_IRQ*4)   = 2;
   *(volatile uint32 *)(PLIC_PRIORITY + VIRTIO0_IRQ*4) = 1;
 
-  printf("plicinit done\n");
+  //printf("plicinit done\n");
 }
 
 // Helpers para SENABLE del hart (sobreescribe el word indicado).
@@ -47,7 +47,7 @@ static inline void plic_disable_all_first64(int hart)
 void plicinithart(void)
 {
   int hart = plic_ctx_hart();                  // 1-based para PLIC_S*
-  printf("plicinithart: r_tp=%ld cpuid=%d\r\n", r_tp(), cpuid());
+  //printf("plicinithart: r_tp=%ld cpuid=%d\r\n", r_tp(), cpuid());
   *(uint32*)PLIC_SPRIORITY(hart) = 0;          // threshold 0
    plic_disable_all_first64(hart);
   // De momento NO habilitamos nada fijo aquí: dejará que uart autodetecte su ID.

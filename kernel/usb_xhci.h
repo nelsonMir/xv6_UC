@@ -1,10 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0+
+
 /*
 Basado en el controlador xHCI de Linux y U-Boot.
-Copyright (C) 2008 Intel Corp.
-Author: Sarah Sharp
-Copyright (C) 2013 Samsung Electronics Co.Ltd
-Authors: Vivek Gautam, Vikas Sajjan
+
 */
 
 /*

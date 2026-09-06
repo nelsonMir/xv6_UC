@@ -105,11 +105,11 @@
 #define DBG_SD 0
 #endif
 
-#if DBG_SD
-#define SD_DEBUG(...) printf(__VA_ARGS__)
-#else
-#define SD_DEBUG(...)
-#endif
+#define SD_DEBUG(...)              \
+  do {                             \
+    if(DBG_SD)                     \
+      printf(__VA_ARGS__);         \
+  } while(0)
 
 static int sd_ready = 0;
 static uint sd_data_offset = SDMMC_DATA_NEW;
@@ -133,8 +133,8 @@ sd_panic_status(char *msg)
   uint status  = sd_readl(SDMMC_STATUS);
   uint cmd     = sd_readl(SDMMC_CMD);
 
-  printf("sd: %s\r\n", msg);
-  printf("sd: RINTSTS=0x%x STATUS=0x%x CMD=0x%x RESP0=0x%x\r\n",
+  SD_DEBUG("sd: %s\r\n", msg);
+  SD_DEBUG("sd: RINTSTS=0x%x STATUS=0x%x CMD=0x%x RESP0=0x%x\r\n",
          rintsts, status, cmd, sd_readl(SDMMC_RESP0));
 
   panic("sdcard");
@@ -229,7 +229,7 @@ sd_send_cmd(uint cmdidx, uint arg, uint flags)
     uint r = sd_readl(SDMMC_RINTSTS);
 
     if(r & INT_ERRORS){
-      printf("sd_send_cmd: cmd=%u arg=0x%x flags=0x%x\r\n",
+      SD_DEBUG("sd_send_cmd: cmd=%u arg=0x%x flags=0x%x\r\n",
              cmdidx, arg, flags);
       sd_panic_status("error en comando SD");
     }
@@ -241,7 +241,7 @@ sd_send_cmd(uint cmdidx, uint arg, uint flags)
     }
   }
 
-  printf("sd_send_cmd: timeout cmd=%u arg=0x%x flags=0x%x\r\n",
+  SD_DEBUG("sd_send_cmd: timeout cmd=%u arg=0x%x flags=0x%x\r\n",
          cmdidx, arg, flags);
   sd_panic_status("timeout esperando CMD_DONE");
 }
@@ -297,7 +297,7 @@ sd_read_sector(uint64 lba, uchar *dst)
       break;
 
     if(r & INT_ERRORS){
-      printf("sd_read_sector: error leyendo lba=%lu copied=%d\r\n",
+      SD_DEBUG("sd_read_sector: error leyendo lba=%lu copied=%d\r\n",
             lba, copied);
       sd_panic_status("error durante lectura de datos");
     }
@@ -322,7 +322,7 @@ sd_read_sector(uint64 lba, uchar *dst)
 
     idle++;
     if(idle > SD_TIMEOUT){
-      printf("sd_read_sector: timeout drenando FIFO lba=%lu copied=%d r=0x%x status=0x%x\r\n",
+      SD_DEBUG("sd_read_sector: timeout drenando FIFO lba=%lu copied=%d r=0x%x status=0x%x\r\n",
             lba, copied, r, status);
       sd_panic_status("timeout drenando FIFO");
     }
@@ -347,12 +347,12 @@ sd_read_sector(uint64 lba, uchar *dst)
     uint fatal = r & (INT_ERRORS & ~INT_FRUN);
 
     if(fatal){
-      printf("sd_read_sector: error final fatal lba=%lu r=0x%x\r\n", lba, r);
+      SD_DEBUG("sd_read_sector: error final fatal lba=%lu r=0x%x\r\n", lba, r);
       sd_panic_status("error final en lectura");
     }
   }
 
-  printf("sd_read_sector: timeout esperando DATA_OVER lba=%lu\r\n", lba);
+  SD_DEBUG("sd_read_sector: timeout esperando DATA_OVER lba=%lu\r\n", lba);
   sd_panic_status("timeout DATA_OVER");
 }
 
@@ -403,14 +403,14 @@ sd_write_sector(uint64 lba, uchar *src)
     uint fatal = r & (INT_ERRORS & ~INT_FRUN);
 
     if(fatal){
-      printf("sd_write_sector: error fatal lba=%lu written=%d r=0x%x\r\n",
+      SD_DEBUG("sd_write_sector: error fatal lba=%lu written=%d r=0x%x\r\n",
              lba, written, r);
       sd_panic_status("error durante escritura de datos");
     }
 
     idle++;
     if(idle > SD_TIMEOUT){
-      printf("sd_write_sector: timeout llenando FIFO lba=%lu written=%d r=0x%x status=0x%x\r\n",
+      SD_DEBUG("sd_write_sector: timeout llenando FIFO lba=%lu written=%d r=0x%x status=0x%x\r\n",
              lba, written, r, status);
       sd_panic_status("timeout escribiendo FIFO");
     }
@@ -423,7 +423,7 @@ sd_write_sector(uint64 lba, uchar *src)
     uint fatal = r & (INT_ERRORS & ~INT_FRUN);
 
     if(fatal){
-      printf("sd_write_sector: error final fatal lba=%lu r=0x%x\r\n", lba, r);
+      SD_DEBUG("sd_write_sector: error final fatal lba=%lu r=0x%x\r\n", lba, r);
       sd_panic_status("error final en escritura");
     }
 
@@ -444,14 +444,14 @@ sd_write_sector(uint64 lba, uchar *src)
     }
   }
 
-  printf("sd_write_sector: timeout esperando DATA_OVER lba=%lu\r\n", lba);
+  SD_DEBUG("sd_write_sector: timeout esperando DATA_OVER lba=%lu\r\n", lba);
   sd_panic_status("timeout DATA_OVER escritura");
 }
 
 void
 sd_init(void)
 {
-  printf("sd_init: microSD driver PIO/CMD17\r\n");
+  SD_DEBUG("sd_init: microSD driver PIO/CMD17\r\n");
 
   if(BSIZE != 1024)
     panic("sd_init: este codigo asume BSIZE=1024");
@@ -466,7 +466,7 @@ sd_init(void)
   else
     sd_data_offset = SDMMC_DATA_OLD;
 
-  printf("sd: VERID=0x%x HCON=0x%x STATUS=0x%x CDETECT=0x%x DATA=0x%x\r\n",
+  SD_DEBUG("sd: VERID=0x%x HCON=0x%x STATUS=0x%x CDETECT=0x%x DATA=0x%x\r\n",
          ver, hcon, status, cdetect, sd_data_offset);
 
   sd_prepare_pio();
@@ -478,7 +478,7 @@ sd_init(void)
 
   sd_ready = 1;
 
-  printf("sd_init: listo para lectura CMD17 desde LBA %lu\r\n",
+  SD_DEBUG("sd_init: listo para lectura CMD17 desde LBA %lu\r\n",
          (uint64)XV6_FS_START_LBA);
 }
 

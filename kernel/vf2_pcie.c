@@ -38,6 +38,16 @@ EN concreto, aquí haré las siguientes acciones:
 #include "defs.h"
 #include "vf2_pcie.h"
 
+//debug 
+#ifndef DBG_PCIE
+#define DBG_PCIE 0
+#endif
+
+#define PCIE_DEBUG(...)            \
+  do {                             \
+    if(DBG_PCIE)                   \
+      printf(__VA_ARGS__);         \
+  } while(0)
 
 #define BIT(n) (1U << (n)) /*con esta macro podré expresar un bit concreto, ósea le paso 
 un num entero y me devuelve el bit activo, si le mando BIT(50) me devuelve el bit 50 a valor 1 y los demás a 0
@@ -344,15 +354,15 @@ vf2_pcie0_enable_clocks(void)
   vf2_pcie_enable_clock(
     stg_clock_register(STGCLK_PCIE_SLV_MAIN));
 
-  printf("pcie0: clocks enabled\n");
+  PCIE_DEBUG("pcie0: clocks enabled\n");
 
-  printf("pcie0: noc=0x%x iomux=0x%x\n",
+  PCIE_DEBUG("pcie0: noc=0x%x iomux=0x%x\n",
          mmio_read32(
            sys_clock_register(SYSCLK_NOC_BUS_STG_AXI)),
          mmio_read32(
            sys_clock_register(SYSCLK_IOMUX_APB)));
 
-  printf("pcie0: axi=0x%x apb=0x%x tl=0x%x\n",
+  PCIE_DEBUG("pcie0: axi=0x%x apb=0x%x tl=0x%x\n",
          mmio_read32(
            stg_clock_register(STGCLK_PCIE0_AXI_MST0)),
          mmio_read32(
@@ -408,7 +418,7 @@ vf2_pcie0_configure_perst_gpio(void)
     mask,
     value);
 
-  printf("pcie0: GPIO26 configured as active-low PERST\n");
+  PCIE_DEBUG("pcie0: GPIO26 configured as active-low PERST\n");
 }
 
 
@@ -441,7 +451,7 @@ vf2_pcie0_set_perst(int asserted)
     mask,
     value);
 
-  printf("pcie0: PERST %s\n",
+  PCIE_DEBUG("pcie0: PERST %s\n",
          asserted ? "asserted" : "deasserted");
 }
 
@@ -470,7 +480,7 @@ vf2_pcie0_configure_phy(void)
     mmio_read32(
       VF2_STG_SYSCON_BASE + STG_PCIE_PHY_USB_OFFSET);
 
-  printf("pcie0: PHY mode before=0x%x width before=0x%x\n",
+  PCIE_DEBUG("pcie0: PHY mode before=0x%x width before=0x%x\n",
          before_mode,
          before_width);
 
@@ -521,11 +531,11 @@ vf2_pcie0_configure_phy(void)
     mmio_read32(
       VF2_STG_SYSCON_BASE + STG_PCIE_PHY_USB_OFFSET);
 
-  printf("pcie0: PHY mode after=0x%x width after=0x%x\n",
+  PCIE_DEBUG("pcie0: PHY mode after=0x%x width after=0x%x\n",
          after_mode,
          after_width);
 
-  printf("pcie0: Multi-PHY configured for PCIe\n");
+  PCIE_DEBUG("pcie0: Multi-PHY configured for PCIe\n");
 }
 
 
@@ -552,9 +562,9 @@ vf2_pcie0_configure_stg(void)
     VF2_STG_SYSCON_BASE + STG_PCIE0_AW_OFFSET,
     STG_SYSCON_CLKREQ);
 
-  printf("pcie0: STG root-port and reference clock configured\n");
+  PCIE_DEBUG("pcie0: STG root-port and reference clock configured\n");
 
-  printf("pcie0: STG AW=0x%x RP_NEP=0x%x\n",
+  PCIE_DEBUG("pcie0: STG AW=0x%x RP_NEP=0x%x\n",
          mmio_read32(
            VF2_STG_SYSCON_BASE + STG_PCIE0_AW_OFFSET),
          mmio_read32(
@@ -582,7 +592,7 @@ vf2_pcie0_wait_resets(void)
     __asm__ volatile("nop");
   }
 
-  printf("pcie0: reset timeout status=0x%x\n",
+  PCIE_DEBUG("pcie0: reset timeout status=0x%x\n",
          mmio_read32(
            VF2_STG_CRG_BASE + STG_RESET_STATUS));
 
@@ -602,7 +612,7 @@ vf2_pcie0_deassert_resets(void)
   before =
     mmio_read32(VF2_STG_CRG_BASE + STG_RESET_ASSERT);
 
-  printf("pcie0: reset assert before=0x%x\n",
+  PCIE_DEBUG("pcie0: reset assert before=0x%x\n",
          before);
 
   mmio_clear_bits(
@@ -615,7 +625,7 @@ vf2_pcie0_deassert_resets(void)
   after =
     mmio_read32(VF2_STG_CRG_BASE + STG_RESET_ASSERT);
 
-  printf("pcie0: reset assert after=0x%x status=0x%x\n",
+  PCIE_DEBUG("pcie0: reset assert after=0x%x status=0x%x\n",
          after,
          mmio_read32(
            VF2_STG_CRG_BASE + STG_RESET_STATUS));
@@ -711,9 +721,9 @@ vf2_pcie0_configure_root_port(void)
     VF2_PCIE0_APB_BASE + PLDA_PCIE_WINROM,
     PLDA_PREF_MEM_WIN_64_SUPPORT);
 
-  printf("pcie0: PLDA Root Port configured\n");
+  PCIE_DEBUG("pcie0: PLDA Root Port configured\n");
 
-  printf("pcie0: GEN=0x%x IDS=0x%x MISC=0x%x\n",
+  PCIE_DEBUG("pcie0: GEN=0x%x IDS=0x%x MISC=0x%x\n",
          mmio_read32(
            VF2_PCIE0_APB_BASE + PLDA_GEN_SETTINGS),
          mmio_read32(
@@ -743,13 +753,13 @@ vf2_pcie0_wait_for_link(void)
       mmio_read32(
         VF2_STG_SYSCON_BASE + STG_PCIE0_LNKSTA_OFFSET);
 
-    printf("pcie0: link attempt=%d status=0x%x\n",
+    PCIE_DEBUG("pcie0: link attempt=%d status=0x%x\n",
            (int)(attempt + 1U),
            status);
 
     if(status & STG_DATA_LINK_ACTIVE){
       pcie0_link_active = 1;
-      printf("pcie0: port link up\n");
+      PCIE_DEBUG("pcie0: port link up\n");
       return 0;
     }
 
@@ -758,7 +768,7 @@ vf2_pcie0_wait_for_link(void)
 
   pcie0_link_active = 0;
 
-  printf("pcie0: port link down\n");
+  PCIE_DEBUG("pcie0: port link down\n");
 
   return -1;
 }
@@ -776,15 +786,15 @@ vf2_pcie0_init(void)
 {
   pcie0_link_active = 0;
 
-  printf("\n");
-  printf("========================================\n");
-  printf(" JH7110 PCIE0 DRIVER - STAGE 1\n");
-  printf("========================================\n");
+  PCIE_DEBUG("\n");
+  PCIE_DEBUG("========================================\n");
+  PCIE_DEBUG(" JH7110 PCIE0 DRIVER - STAGE 1\n");
+  PCIE_DEBUG("========================================\n");
 
-  printf("pcie0: APB base=%p\n",
+  PCIE_DEBUG("pcie0: APB base=%p\n",
          (void *)VF2_PCIE0_APB_BASE);
 
-  printf("pcie0: PHY base=%p\n",
+  PCIE_DEBUG("pcie0: PHY base=%p\n",
          (void *)VF2_PCIE0_PHY_BASE);
 
   /*
@@ -799,7 +809,7 @@ vf2_pcie0_init(void)
   vf2_pcie0_configure_stg();
 
   if(vf2_pcie0_deassert_resets() < 0){
-    printf("pcie0: failed to release controller resets\n");
+    PCIE_DEBUG("pcie0: failed to release controller resets\n");
     return -1;
   }
 
@@ -809,7 +819,7 @@ vf2_pcie0_init(void)
   PERST debe permanecer activo durante al menos cien milisegundos
   después de que la alimentación y los relojes sean estables.
   */
-  printf("pcie0: holding PERST for 100 ms\n");
+  PCIE_DEBUG("pcie0: holding PERST for 100 ms\n");
   vf2_pcie_delay_ms(100U);
 
   vf2_pcie0_set_perst(0);
@@ -818,17 +828,17 @@ vf2_pcie0_init(void)
   Después de liberar PERST se esperan otros cien milisegundos antes
   de comprobar o enviar peticiones de configuración al dispositivo.
   */
-  printf("pcie0: waiting 100 ms after PERST release\n");
+  PCIE_DEBUG("pcie0: waiting 100 ms after PERST release\n");
   vf2_pcie_delay_ms(100U);
 
   if(vf2_pcie0_wait_for_link() < 0){
-    printf("pcie0: stage 1 failed\n");
-    printf("========================================\n");
+    PCIE_DEBUG("pcie0: stage 1 failed\n");
+    PCIE_DEBUG("========================================\n");
     return -1;
   }
 
-  printf("pcie0: stage 1 completed\n");
-  printf("========================================\n");
+  PCIE_DEBUG("pcie0: stage 1 completed\n");
+  PCIE_DEBUG("========================================\n");
 
   return 0;
 }

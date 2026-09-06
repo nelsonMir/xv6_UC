@@ -121,6 +121,8 @@ extern uint64 sys_setscheduler(void);
 extern uint64 sys_term_raw(void);
 extern uint64 sys_term_cooked(void);
 extern uint64 sys_term_available(void);
+extern uint64 sys_gpio_output(void);
+extern uint64 sys_gpio_write(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -156,6 +158,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_term_raw]    sys_term_raw,
 [SYS_term_cooked] sys_term_cooked,
 [SYS_term_available] sys_term_available,
+[SYS_gpio_output] sys_gpio_output,
+[SYS_gpio_write]  sys_gpio_write,
 };
 
 

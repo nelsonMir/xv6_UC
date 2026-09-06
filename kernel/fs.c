@@ -44,7 +44,7 @@ fsinit(int dev) {
   if(sb.magic != FSMAGIC)
     panic("invalid file system");
   initlog(dev, &sb);
-  printf("fsinit: done (dev=%d)\r\n", dev);
+  //printf("fsinit: done (dev=%d)\r\n", dev);
 
 }
 

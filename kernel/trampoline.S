@@ -104,6 +104,11 @@ userret:
         # switch from kernel to user.
         # a0: user page table, for satp.
 
+
+        # Sincronizar codigo escrito en memoria antes de
+        # comenzar a ejecutar el proceso de usuario.
+        fence.i
+        
         # switch to the user page table.
         sfence.vma zero, zero
         csrw satp, a0

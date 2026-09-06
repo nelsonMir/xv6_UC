@@ -26,6 +26,17 @@ enumeración USB general.
 #include "defs.h"
 #include "usb_xhci.h"
 
+//flag debug 
+#ifndef DBG_USB
+#define DBG_USB 0
+#endif
+
+#define USB_DEBUG(...)             \
+  do {                             \
+    if(DBG_USB)                    \
+      printf(__VA_ARGS__);         \
+  } while(0)
+
 struct usb_open_device {
   uint32 slot_id;
   uint32 speed;
@@ -134,7 +145,7 @@ usb_update_ep0_packet(uint32 slot_id, uint32 packet)
 
   if(packet != 8U && packet != 16U &&
      packet != 32U && packet != 64U && packet != 512U){
-    printf("usb: invalid EP0 max packet=%d\n", (int)packet);
+    USB_DEBUG("usb: invalid EP0 max packet=%d\n", (int)packet);
     return -1;
   }
 
@@ -164,7 +175,7 @@ usb_update_ep0_packet(uint32 slot_id, uint32 packet)
     return -1;
 
   device->ep0_max_packet = packet;
-  printf("usb: slot %d EP0 max packet updated to %d\n",
+  USB_DEBUG("usb: slot %d EP0 max packet updated to %d\n",
          (int)slot_id,
          (int)packet);
   return 0;
@@ -213,7 +224,7 @@ usb_find_boot_keyboard(uchar *buffer,
 
       if(matching_interface){
         *interface_number = interface->bInterfaceNumber;
-        printf("usb: HID Boot interface=%d endpoints=%d\n",
+        USB_DEBUG("usb: HID Boot interface=%d endpoints=%d\n",
                (int)interface->bInterfaceNumber,
                (int)interface->bNumEndpoints);
       }
@@ -229,7 +240,7 @@ usb_find_boot_keyboard(uchar *buffer,
         *max_packet = usb_get_le16(&endpoint->wMaxPacketSize) & 0x7ffU;
         *interval = endpoint->bInterval;
 
-        printf("usb: Interrupt IN endpoint=0x%x packet=%d interval=%d\n",
+        USB_DEBUG("usb: Interrupt IN endpoint=0x%x packet=%d interval=%d\n",
                endpoint->bEndpointAddress,
                (int)*max_packet,
                (int)*interval);
@@ -374,7 +385,7 @@ usb_configure_interrupt_endpoint(uint32 slot_id,
     return -1;
 
   *endpoint_id = dci;
-  printf("usb: slot %d xHCI endpoint DCI=%d interval-field=%d\n",
+  USB_DEBUG("usb: slot %d xHCI endpoint DCI=%d interval-field=%d\n",
          (int)slot_id,
          (int)dci,
          (int)interval_value);
@@ -426,7 +437,7 @@ usb_open_xhci_device(uint32 root_port_id,
                         0,
                         device_buffer,
                         8) < 0){
-    printf("usb: slot %d first Device Descriptor read failed\n",
+    USB_DEBUG("usb: slot %d first Device Descriptor read failed\n",
            (int)slot_id);
     return -1;
   }
@@ -460,7 +471,7 @@ usb_open_xhci_device(uint32 root_port_id,
 
   if(total_length < sizeof(struct usb_config_descriptor) ||
      total_length > USB_XHCI_MAX_CONFIG){
-    printf("usb: slot %d invalid configuration length=%d\n",
+    USB_DEBUG("usb: slot %d invalid configuration length=%d\n",
            (int)slot_id,
            (int)total_length);
     return -1;
@@ -482,7 +493,7 @@ usb_open_xhci_device(uint32 root_port_id,
   opened->config_length = total_length;
   opened->config_buffer = config_buffer;
 
-  printf("usb: slot %d device %x:%x class=0x%x protocol=0x%x usb=0x%x configs=%d\n",
+  USB_DEBUG("usb: slot %d device %x:%x class=0x%x protocol=0x%x usb=0x%x configs=%d\n",
          (int)slot_id,
          (uint32)usb_get_le16(&opened->descriptor.idVendor),
          (uint32)usb_get_le16(&opened->descriptor.idProduct),
@@ -515,22 +526,22 @@ usb_finish_keyboard(struct usb_open_device *opened)
     return -1;
 
   if(max_packet < 8U){
-    printf("usb: keyboard endpoint packet is too small\n");
+    USB_DEBUG("usb: keyboard endpoint packet is too small\n");
     return -1;
   }
 
   if(usb_set_configuration(opened->slot_id, configuration) < 0){
-    printf("usb: Set Configuration failed for keyboard\n");
+    USB_DEBUG("usb: Set Configuration failed for keyboard\n");
     return -1;
   }
 
   if(usb_hid_set_protocol(opened->slot_id, interface_number) < 0){
-    printf("usb: Set Protocol Boot failed\n");
+    USB_DEBUG("usb: Set Protocol Boot failed\n");
     return -1;
   }
 
   if(usb_hid_set_idle(opened->slot_id, interface_number) < 0){
-    printf("usb: Set Idle failed\n");
+    USB_DEBUG("usb: Set Idle failed\n");
     return -1;
   }
 
@@ -704,7 +715,7 @@ usb_mark_xhci_hub(uint32 slot_id,
   device->hub_tt_think_time = tt_think_time;
   device->hub_multi_tt = multi_tt;
 
-  printf("usb-hub: xHCI slot=%d ports=%d tt-think=%d multi-tt=%d\n",
+  USB_DEBUG("usb-hub: xHCI slot=%d ports=%d tt-think=%d multi-tt=%d\n",
          (int)slot_id,
          (int)ports,
          (int)tt_think_time,
@@ -780,7 +791,7 @@ usb_hub_reset_port(uint32 hub_slot_id,
                             port_id,
                             USB_PORT_FEAT_RESET,
                             1) < 0){
-      printf("usb-hub: port %d reset request failed\n", (int)port_id);
+      USB_DEBUG("usb-hub: port %d reset request failed\n", (int)port_id);
       return -1;
     }
 
@@ -796,7 +807,7 @@ usb_hub_reset_port(uint32 hub_slot_id,
     change = usb_get_le16(&status_buffer->wPortChange);
 
     if((status & USB_PORT_STAT_CONNECTION) == 0){
-      printf("usb-hub: port %d disconnected during reset\n",
+      USB_DEBUG("usb-hub: port %d disconnected during reset\n",
              (int)port_id);
       return -1;
     }
@@ -806,7 +817,7 @@ usb_hub_reset_port(uint32 hub_slot_id,
   }
 
   if((status & USB_PORT_STAT_ENABLE) == 0){
-    printf("usb-hub: port %d reset timeout status=0x%x change=0x%x\n",
+    USB_DEBUG("usb-hub: port %d reset timeout status=0x%x change=0x%x\n",
            (int)port_id,
            (uint32)status,
            (uint32)change);
@@ -819,7 +830,7 @@ usb_hub_reset_port(uint32 hub_slot_id,
   //USB 2.0 exige 10 ms de recuperación antes de Address Device
   xhci_delay_us(10000U);
 
-  printf("usb-hub: port %d reset complete status=0x%x change=0x%x speed=%d\n",
+  USB_DEBUG("usb-hub: port %d reset complete status=0x%x change=0x%x speed=%d\n",
          (int)port_id,
          (uint32)status,
          (uint32)change,
@@ -865,13 +876,13 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
 
   hub_device = xhci_get_device(&xhci, hub->slot_id);
   if(hub_device == 0){
-    printf("usb-hub: xHCI device for hub slot %d not found\n",
+    USB_DEBUG("usb-hub: xHCI device for hub slot %d not found\n",
            (int)hub->slot_id);
     return -1;
   }
 
   if(hub->speed != XHCI_SPEED_HIGH){
-    printf("usb-hub: only the internal High-Speed USB 2.0 hub is supported\n");
+    USB_DEBUG("usb-hub: only the internal High-Speed USB 2.0 hub is supported\n");
     return -1;
   }
 
@@ -880,7 +891,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   */
   if(usb_set_configuration(hub->slot_id,
                            hub->configuration) < 0){
-    printf("usb-hub: Set Configuration failed\n");
+    USB_DEBUG("usb-hub: Set Configuration failed\n");
     return -1;
   }
 
@@ -892,7 +903,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   port_status = usb_dma_alloc(sizeof(*port_status), 64U);
 
   if(hub_descriptor == 0 || port_status == 0){
-    printf("usb-hub: DMA allocation failed\n");
+    USB_DEBUG("usb-hub: DMA allocation failed\n");
     return -1;
   }
 
@@ -905,13 +916,13 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   if(usb_hub_get_descriptor(hub->slot_id,
                             hub_descriptor,
                             64U) < 0){
-    printf("usb-hub: GET_HUB_DESCRIPTOR failed\n");
+    USB_DEBUG("usb-hub: GET_HUB_DESCRIPTOR failed\n");
     return -1;
   }
 
   if(hub_descriptor->bLength < 7U ||
      hub_descriptor->bDescriptorType != USB_DT_HUB){
-    printf("usb-hub: invalid descriptor length=%d type=0x%x\n",
+    USB_DEBUG("usb-hub: invalid descriptor length=%d type=0x%x\n",
            (int)hub_descriptor->bLength,
            (uint32)hub_descriptor->bDescriptorType);
     return -1;
@@ -920,7 +931,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   ports = hub_descriptor->bNbrPorts;
 
   if(ports == 0U || ports > USB_HUB_MAX_PORTS){
-    printf("usb-hub: unsupported downstream port count=%d\n",
+    USB_DEBUG("usb-hub: unsupported downstream port count=%d\n",
            (int)ports);
     return -1;
   }
@@ -928,7 +939,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   characteristics =
     usb_get_le16(&hub_descriptor->wHubCharacteristics);
 
-  printf("usb-hub: VIA internal hub slot=%d ports=%d protocol=%d characteristics=0x%x pgood=%d\n",
+  USB_DEBUG("usb-hub: VIA internal hub slot=%d ports=%d protocol=%d characteristics=0x%x pgood=%d\n",
          (int)hub->slot_id,
          (int)ports,
          (int)hub_protocol,
@@ -943,7 +954,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
                        ports,
                        (characteristics >> 5) & 0x3U,
                        multi_tt) < 0){
-    printf("usb-hub: could not update xHCI hub context\n");
+    USB_DEBUG("usb-hub: could not update xHCI hub context\n");
     return -1;
   }
 
@@ -958,20 +969,20 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   if(usb_hub_get_port_status(hub->slot_id,
                              1,
                              port_status) < 0){
-    printf("usb-hub: pre-power GET_STATUS failed\n");
+    USB_DEBUG("usb-hub: pre-power GET_STATUS failed\n");
     return -1;
   }
 
   status = usb_get_le16(&port_status->wPortStatus);
   change = usb_get_le16(&port_status->wPortChange);
 
-  printf("usb-hub: pre-power port 1 status=0x%x change=0x%x powered=%d overcurrent=%d\n",
+  USB_DEBUG("usb-hub: pre-power port 1 status=0x%x change=0x%x powered=%d overcurrent=%d\n",
          (uint32)status,
          (uint32)change,
          (status & USB_PORT_STAT_POWER) != 0,
          (status & USB_PORT_STAT_OVERCURRENT) != 0);
 
-  printf("usb-hub: port power mode=%d\n",
+  USB_DEBUG("usb-hub: port power mode=%d\n",
          (int)power_mode);
 
     /*
@@ -980,7 +991,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   Antes se limpian los cambios de sobrecorriente pendientes.
   */
 
-  printf("usb-hub: clearing previous overcurrent changes\n");
+  USB_DEBUG("usb-hub: clearing previous overcurrent changes\n");
 
   for(port_id = 1; port_id <= ports; port_id++){
     memset(port_status, 0, sizeof(*port_status));
@@ -988,7 +999,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
     if(usb_hub_get_port_status(hub->slot_id,
                                port_id,
                                port_status) < 0){
-      printf("usb-hub: pre-power status failed port=%d\n",
+      USB_DEBUG("usb-hub: pre-power status failed port=%d\n",
              (int)port_id);
       continue;
     }
@@ -996,20 +1007,20 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
     status = usb_get_le16(&port_status->wPortStatus);
     change = usb_get_le16(&port_status->wPortChange);
 
-    printf("usb-hub: pre-power port=%d status=0x%x change=0x%x\n",
+    USB_DEBUG("usb-hub: pre-power port=%d status=0x%x change=0x%x\n",
            (int)port_id,
            (uint32)status,
            (uint32)change);
 
     if(change & USB_PORT_STAT_C_OVERCURRENT){
-      printf("usb-hub: clearing C_PORT_OVER_CURRENT port=%d\n",
+      USB_DEBUG("usb-hub: clearing C_PORT_OVER_CURRENT port=%d\n",
              (int)port_id);
 
       if(usb_hub_port_feature(hub->slot_id,
                               port_id,
                               USB_PORT_FEAT_C_OVER_CURRENT,
                               0) < 0){
-        printf("usb-hub: failed to clear overcurrent change port=%d\n",
+        USB_DEBUG("usb-hub: failed to clear overcurrent change port=%d\n",
                (int)port_id);
       }
     }
@@ -1021,10 +1032,10 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   */
   xhci_delay_us(20000U);
 
-  printf("usb-hub: enabling power on all downstream ports\n");
+  USB_DEBUG("usb-hub: enabling power on all downstream ports\n");
 
   for(port_id = 1; port_id <= ports; port_id++){
-    printf("usb-hub: before PORT_POWER port=%d\n",
+    USB_DEBUG("usb-hub: before PORT_POWER port=%d\n",
            (int)port_id);
 
     power_result = usb_hub_port_feature(hub->slot_id,
@@ -1032,12 +1043,12 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
                                         USB_PORT_FEAT_POWER,
                                         1);
 
-    printf("usb-hub: after PORT_POWER port=%d result=%d\n",
+    USB_DEBUG("usb-hub: after PORT_POWER port=%d result=%d\n",
            (int)port_id,
            power_result);
 
     if(power_result < 0){
-      printf("usb-hub: PORT_POWER failed port=%d\n",
+      USB_DEBUG("usb-hub: PORT_POWER failed port=%d\n",
              (int)port_id);
       return -1;
     }
@@ -1046,12 +1057,12 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
   if(delay_ms < 100U)
     delay_ms = 100U;
 
-  printf("usb-hub: waiting %d ms before scanning ports\n",
+  USB_DEBUG("usb-hub: waiting %d ms before scanning ports\n",
          (int)delay_ms);
 
   xhci_delay_us(delay_ms * 1000U);
 
-  printf("usb-hub: port power delay completed\n");
+  USB_DEBUG("usb-hub: port power delay completed\n");
 
   /*
   Recorre los puertos descendentes buscando el primer dispositivo
@@ -1065,12 +1076,12 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
                                    port_status,
                                    &status,
                                    &change) < 0){
-      printf("usb-hub: could not read port %d status\n",
+      USB_DEBUG("usb-hub: could not read port %d status\n",
              (int)port_id);
       continue;
     }
 
-    printf("usb-hub: port %d status=0x%x change=0x%x connected=%d powered=%d overcurrent=%d\n",
+    USB_DEBUG("usb-hub: port %d status=0x%x change=0x%x connected=%d powered=%d overcurrent=%d\n",
            (int)port_id,
            (uint32)status,
            (uint32)change,
@@ -1096,7 +1107,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
                           port_id,
                           port_status,
                           &child_speed) < 0){
-      printf("usb-hub: reset failed on downstream port %d\n",
+      USB_DEBUG("usb-hub: reset failed on downstream port %d\n",
              (int)port_id);
       continue;
     }
@@ -1119,7 +1130,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
       tt_port = port_id;
     }
 
-    printf("usb-hub: enumerating child port=%d route=0x%x speed=%d tt-slot=%d tt-port=%d\n",
+    USB_DEBUG("usb-hub: enumerating child port=%d route=0x%x speed=%d tt-slot=%d tt-port=%d\n",
            (int)port_id,
            (int)route_string,
            (int)child_speed,
@@ -1136,7 +1147,7 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
                             tt_slot,
                             tt_port,
                             &child) < 0){
-      printf("usb-hub: child enumeration failed on port %d\n",
+      USB_DEBUG("usb-hub: child enumeration failed on port %d\n",
              (int)port_id);
       continue;
     }
@@ -1146,16 +1157,16 @@ usb_enumerate_keyboard_behind_hub(struct usb_open_device *hub,
     Keyboard y configura su endpoint Interrupt IN.
     */
     if(usb_finish_keyboard(&child) == 0){
-      printf("usb-hub: HID Boot keyboard ready on downstream port %d\n",
+      USB_DEBUG("usb-hub: HID Boot keyboard ready on downstream port %d\n",
              (int)port_id);
       return 0;
     }
 
-    printf("usb-hub: device on downstream port %d is not a HID Boot keyboard\n",
+    USB_DEBUG("usb-hub: device on downstream port %d is not a HID Boot keyboard\n",
            (int)port_id);
   }
 
-  printf("usb-hub: no HID Boot keyboard found behind internal hub\n");
+  USB_DEBUG("usb-hub: no HID Boot keyboard found behind internal hub\n");
 
   return -1;
 }
@@ -1166,7 +1177,7 @@ usb_enumerate_keyboard(uint32 port_id, uint32 speed)
   struct usb_open_device root_device;
   uchar hub_protocol = 0;
 
-  printf("\nusb: enumerating root port=%d speed=%d\n",
+  USB_DEBUG("\nusb: enumerating root port=%d speed=%d\n",
          (int)port_id,
          (int)speed);
 
@@ -1183,19 +1194,19 @@ usb_enumerate_keyboard(uint32 port_id, uint32 speed)
     return 0;
 
   if(usb_find_hub_interface(&root_device, &hub_protocol) < 0){
-    printf("usb: device is neither a HID Boot keyboard nor a USB hub\n");
+    USB_DEBUG("usb: device is neither a HID Boot keyboard nor a USB hub\n");
     return -1;
   }
 
   if(hub_protocol != USB_HUB_PROTOCOL_SINGLE_TT){
-    printf("usb-hub: only the internal Single-TT USB 2.0 hub is supported, protocol=%d\n",
+    USB_DEBUG("usb-hub: only the internal Single-TT USB 2.0 hub is supported, protocol=%d\n",
            (int)hub_protocol);
     return -1;
   }
 
   if(usb_enumerate_keyboard_behind_hub(&root_device,
                                         hub_protocol) < 0){
-    printf("usb-hub: no HID Boot keyboard found behind internal hub\n");
+    USB_DEBUG("usb-hub: no HID Boot keyboard found behind internal hub\n");
     return -1;
   }
 

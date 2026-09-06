@@ -11,7 +11,7 @@
 #define TEXT_TOP    2
 #define TEXT_BOTTOM 21
 
-#define MAX_LINES       128
+#define MAX_LINES       1024
 #define MAX_LINE_LENGTH 128
 #define MAX_FILENAME 64
 
@@ -75,7 +75,7 @@ static int editor_load_file(char *filename);
 static int editor_save_file(void);
 static void editor_cut_line(void);
 static void editor_paste_line(void);
-static void editor_process_keys_batch(void);
+//static void editor_process_keys_batch(void);
 
 //Escribe una cadena completa sin depender de printf
 static void
@@ -1096,7 +1096,7 @@ editor_place_cursor(void)
 }
 
 //procesar varios caracteres de golpe (en lote)
-static void
+/*static void
 editor_process_keys_batch(void)
 {
   editor_process_key();
@@ -1104,7 +1104,7 @@ editor_process_keys_batch(void)
   while(term_available() > 0){
     editor_process_key();
   }
-}
+}*/
 
 int
 main(int argc, char *argv[])
@@ -1169,7 +1169,7 @@ main(int argc, char *argv[])
       }
     }
 
-    editor_process_keys_batch();
+    editor_process_key();
   }
 
   // No debería alcanzarse, pero mantengo restauración defensiva

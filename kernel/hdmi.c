@@ -21,6 +21,18 @@
   pertenecen a fbconsole.c, no a este fichero.
  */
 
+ //flag debug 
+#ifndef DBG_HDMI
+#define DBG_HDMI 0
+#endif
+
+#define HDMI_DEBUG(...)            \
+  do {                             \
+    if(DBG_HDMI)                   \
+      printf(__VA_ARGS__);         \
+  } while(0)
+
+
 /*
  * ------------------------------------------------
  * Modo de vídeo y framebuffer
@@ -300,13 +312,13 @@ pmu_dump_regs(const char *tag)
     mmio_read32(JH7110_PMU_BASE +
                 PMU_EVENT_STATUS);
 
-  printf("pmu %s:\n", tag);
+  HDMI_DEBUG("pmu %s:\n", tag);
 
-  printf("  turn_on=0x%lx encourage=0x%lx\n",
+  HDMI_DEBUG("  turn_on=0x%lx encourage=0x%lx\n",
          (uint64)turn_on,
          (uint64)encourage);
 
-  printf("  current=0x%lx vout=%d "
+  HDMI_DEBUG("  current=0x%lx vout=%d "
          "sequence=0x%lx events=0x%lx\n",
          (uint64)current,
          (int)((current & PMU_VOUT_BIT) != 0),
@@ -326,11 +338,11 @@ vout_power_on(void)
                 PMU_CURRENT_POWER_MODE);
 
   if(current & PMU_VOUT_BIT){
-    printf("hdmi: VOUT power domain was already ON\n");
+    HDMI_DEBUG("hdmi: VOUT power domain was already ON\n");
     return 0;
   }
 
-  printf("hdmi: requesting VOUT power-on\n");
+  HDMI_DEBUG("hdmi: requesting VOUT power-on\n");
 
   mmio_write32(JH7110_PMU_BASE +
                PMU_SW_TURN_ON,
@@ -358,7 +370,7 @@ vout_power_on(void)
 
     if(current & PMU_VOUT_BIT){
       pmu_dump_regs("after");
-      printf("hdmi: VOUT power domain is ON\n");
+      HDMI_DEBUG("hdmi: VOUT power domain is ON\n");
       return 0;
     }
 
@@ -366,7 +378,7 @@ vout_power_on(void)
   }
 
   pmu_dump_regs("timeout");
-  printf("hdmi: VOUT power-on timed out\n");
+  HDMI_DEBUG("hdmi: VOUT power-on timed out\n");
 
   return -1;
 }
@@ -418,7 +430,7 @@ reset_deassert_id(uint64 controller_base,
     status_value = mmio_read32(status_address);
 
     if(status_value & mask){
-      printf("hdmi: reset %s deasserted "
+      HDMI_DEBUG("hdmi: reset %s deasserted "
              "assert=0x%lx status=0x%lx\n",
              name,
              (uint64)mmio_read32(assert_address),
@@ -430,7 +442,7 @@ reset_deassert_id(uint64 controller_base,
     delay_loop(100);
   }
 
-  printf("hdmi: reset %s timeout "
+  HDMI_DEBUG("hdmi: reset %s timeout "
          "assert=0x%lx status=0x%lx mask=0x%lx\n",
          name,
          (uint64)mmio_read32(assert_address),
@@ -449,29 +461,29 @@ reset_deassert_id(uint64 controller_base,
 static void
 dump_sys_clocks(void)
 {
-  printf("hdmi: SYS clocks:\n");
+  HDMI_DEBUG("hdmi: SYS clocks:\n");
 
-  printf("  e8(vout-src)  =0x%lx\n",
+  HDMI_DEBUG("  e8(vout-src)  =0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE + SYS_CLK_VOUT_SRC));
 
-  printf("  ec(vout-axi)  =0x%lx\n",
+  HDMI_DEBUG("  ec(vout-axi)  =0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE + SYS_CLK_VOUT_AXI));
 
-  printf("  f0(disp-axi)  =0x%lx\n",
+  HDMI_DEBUG("  f0(disp-axi)  =0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE + SYS_CLK_NOC_DISP_AXI));
 
-  printf("  f4(vout-ahb)  =0x%lx\n",
+  HDMI_DEBUG("  f4(vout-ahb)  =0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE + SYS_CLK_VOUT_TOP_AHB));
 
-  printf("  f8(vout-axi-g)=0x%lx\n",
+  HDMI_DEBUG("  f8(vout-axi-g)=0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE + SYS_CLK_VOUT_TOP_AXI));
 
-  printf("  fc(hdmi-mclk) =0x%lx\n",
+  HDMI_DEBUG("  fc(hdmi-mclk) =0x%lx\n",
          (uint64)mmio_read32(
            SYS_CRG_BASE +
            SYS_CLK_HDMI_MCLK_PARENT));
@@ -480,49 +492,49 @@ dump_sys_clocks(void)
 static void
 dump_vout_clocks(void)
 {
-  printf("hdmi: VOUT clocks:\n");
+  HDMI_DEBUG("hdmi: VOUT clocks:\n");
 
-  printf("  00(apb-div)   =0x%lx\n",
+  HDMI_DEBUG("  00(apb-div)   =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_APB));
 
-  printf("  04(pixel-div) =0x%lx\n",
+  HDMI_DEBUG("  04(pixel-div) =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_PIX_DIV));
 
-  printf("  10(dc-axi)    =0x%lx\n",
+  HDMI_DEBUG("  10(dc-axi)    =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_AXI));
 
-  printf("  14(dc-core)   =0x%lx\n",
+  HDMI_DEBUG("  14(dc-core)   =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_CORE));
 
-  printf("  18(dc-ahb)    =0x%lx\n",
+  HDMI_DEBUG("  18(dc-ahb)    =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_AHB));
 
-  printf("  1c(dc-pix0)   =0x%lx\n",
+  HDMI_DEBUG("  1c(dc-pix0)   =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_PIX0));
 
-  printf("  20(dc-pix1)   =0x%lx\n",
+  HDMI_DEBUG("  20(dc-pix1)   =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_DC_PIX1));
 
-  printf("  3c(hdmi-mclk) =0x%lx\n",
+  HDMI_DEBUG("  3c(hdmi-mclk) =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_HDMI_MCLK));
 
-  printf("  40(hdmi-bclk) =0x%lx\n",
+  HDMI_DEBUG("  40(hdmi-bclk) =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_HDMI_BCLK));
 
-  printf("  44(hdmi-sys)  =0x%lx\n",
+  HDMI_DEBUG("  44(hdmi-sys)  =0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_CLK_HDMI_SYS));
 
-  printf("  reset assert=0x%lx status=0x%lx\n",
+  HDMI_DEBUG("  reset assert=0x%lx status=0x%lx\n",
          (uint64)mmio_read32(
            VOUT_CRG_BASE + VOUT_RESET_ASSERT_BASE),
          (uint64)mmio_read32(
@@ -538,7 +550,7 @@ dump_vout_clocks(void)
 static int
 vout_enable_clocks_and_resets(void)
 {
-  printf("hdmi: configuring SYS VOUT clocks\n");
+  HDMI_DEBUG("hdmi: configuring SYS VOUT clocks\n");
 
   clock_divider_set(
     SYS_CRG_BASE + SYS_CLK_VOUT_AXI,
@@ -586,7 +598,7 @@ vout_enable_clocks_and_resets(void)
 
   delay_ms(1);
 
-  printf("hdmi: configuring local VOUT clocks\n");
+  HDMI_DEBUG("hdmi: configuring local VOUT clocks\n");
 
   clock_divider_set(
     VOUT_CRG_BASE + VOUT_CLK_APB,
@@ -692,7 +704,7 @@ framebuffer_test_pattern(void)
 {
   uint32 color;
 
-  printf("hdmi: drawing framebuffer test pattern\n");
+  HDMI_DEBUG("hdmi: drawing framebuffer test pattern\n");
 
   for(uint32 y = 0; y < FB_HEIGHT; y++){
     for(uint32 x = 0; x < FB_WIDTH; x++){
@@ -723,7 +735,7 @@ framebuffer_test_pattern(void)
    
   asm volatile("fence rw, rw" ::: "memory");
 
-  printf("hdmi: framebuffer pattern ready\n");
+  HDMI_DEBUG("hdmi: framebuffer pattern ready\n");
 } */
 
 
@@ -775,7 +787,7 @@ framebuffer_cache_clean(void)
   line_count =
     (end - start) / CCACHE_LINE_SIZE;
 
-  printf("hdmi: probing CCACHE at %p\n",
+  HDMI_DEBUG("hdmi: probing CCACHE at %p\n",
          (void *)(uint64)CCACHE_BASE);
 
   
@@ -788,17 +800,17 @@ framebuffer_cache_clean(void)
   wayenable =
     mmio_read32(CCACHE_BASE + 0x0008);
 
-  printf("hdmi: CCACHE config=0x%lx wayenable=0x%lx\n",
+  HDMI_DEBUG("hdmi: CCACHE config=0x%lx wayenable=0x%lx\n",
          (uint64)config,
          (uint64)wayenable);
 
-  printf("hdmi: cleaning framebuffer cache\n");
+  HDMI_DEBUG("hdmi: cleaning framebuffer cache\n");
 
-  printf("hdmi: cache range start=%p end=%p\n",
+  HDMI_DEBUG("hdmi: cache range start=%p end=%p\n",
          (void *)start,
          (void *)end);
 
-  printf("hdmi: cache lines=%d line-size=%d\n",
+  HDMI_DEBUG("hdmi: cache lines=%d line-size=%d\n",
          (int)line_count,
          (int)CCACHE_LINE_SIZE);
 
@@ -808,7 +820,7 @@ framebuffer_cache_clean(void)
     Primera línea por separado para determinar si el acceso
     al registro FLUSH64 regresa.
    
-  printf("hdmi: FLUSH64 first line=%p register=%p\n",
+  HDMI_DEBUG("hdmi: FLUSH64 first line=%p register=%p\n",
          (void *)start,
          (void *)(uint64)(CCACHE_BASE + CCACHE_FLUSH64));
 
@@ -819,7 +831,7 @@ framebuffer_cache_clean(void)
 
   asm volatile("fence iorw, iorw" ::: "memory");
 
-  printf("hdmi: first FLUSH64 completed\n");
+  HDMI_DEBUG("hdmi: first FLUSH64 completed\n");
 
   
    La primera línea ya fue limpiada.
@@ -843,7 +855,7 @@ framebuffer_cache_clean(void)
     if((index & 0xfffU) == 0){
       asm volatile("fence iorw, iorw" ::: "memory");
 
-      printf("hdmi: cache progress %d/%d line=%p\n",
+      HDMI_DEBUG("hdmi: cache progress %d/%d line=%p\n",
              (int)index,
              (int)line_count,
              (void *)line);
@@ -852,7 +864,7 @@ framebuffer_cache_clean(void)
 
   asm volatile("fence iorw, iorw" ::: "memory");
 
-  printf("hdmi: framebuffer cache clean completed\n");
+  HDMI_DEBUG("hdmi: framebuffer cache clean completed\n");
 
   return 0;
 } */
@@ -922,9 +934,9 @@ framebuffer_cache_clean_full(void)
      CCACHE_LINE_SIZE - 1U) /
     CCACHE_LINE_SIZE;
 
-  printf("hdmi: cleaning complete framebuffer cache\n");
+  HDMI_DEBUG("hdmi: cleaning complete framebuffer cache\n");
 
-  printf("hdmi: full cache range start=%p size=0x%lx "
+  HDMI_DEBUG("hdmi: full cache range start=%p size=0x%lx "
          "lines=%d\n",
          (void *)(uint64)FRAMEBUFFER_PA,
          (uint64)FB_USED_SIZE,
@@ -935,7 +947,7 @@ framebuffer_cache_clean_full(void)
     FB_USED_SIZE
   );
 
-  printf("hdmi: complete framebuffer cache clean finished\n");
+  HDMI_DEBUG("hdmi: complete framebuffer cache clean finished\n");
 } */
 
 /*
@@ -1051,7 +1063,7 @@ hdmi_cache_clean_full(void)
 static void
 dc8200_configure_1080p(void)
 {
-  printf("hdmi: programming DC8200 for 1920x1080\n");
+  HDMI_DEBUG("hdmi: programming DC8200 for 1920x1080\n");
 
   mmio_write32(DC8200_BASE + 0x0014,
                0xc0001fff);
@@ -1240,33 +1252,33 @@ dc8200_readback(void)
   commit =
     mmio_read32(DC8200_BASE + 0x1ccc);
 
-  printf("hdmi: DC8200 revision=0x%lx chip_id=0x%lx\n",
+  HDMI_DEBUG("hdmi: DC8200 revision=0x%lx chip_id=0x%lx\n",
          (uint64)revision,
          (uint64)chip_id);
 
-  printf("hdmi: DC8200 readback "
+  HDMI_DEBUG("hdmi: DC8200 readback "
          "fb=0x%lx stride=0x%lx\n",
          (uint64)framebuffer_address,
          (uint64)stride);
 
-  printf("hdmi: DC8200 timings "
+  HDMI_DEBUG("hdmi: DC8200 timings "
          "h=0x%lx v=0x%lx commit=0x%lx\n",
          (uint64)horizontal,
          (uint64)vertical,
          (uint64)commit);
 
   if(framebuffer_address != (uint32)FRAMEBUFFER_PA){
-    printf("hdmi: DC8200 framebuffer address mismatch\n");
+    HDMI_DEBUG("hdmi: DC8200 framebuffer address mismatch\n");
     return -1;
   }
 
   if(stride != FB_STRIDE){
-    printf("hdmi: DC8200 stride mismatch\n");
+    HDMI_DEBUG("hdmi: DC8200 stride mismatch\n");
     return -1;
   }
 
   if(horizontal == 0 || vertical == 0){
-    printf("hdmi: DC8200 timing readback failed\n");
+    HDMI_DEBUG("hdmi: DC8200 timing readback failed\n");
     return -1;
   }
 
@@ -1358,7 +1370,7 @@ hdmi_wait_pll_lock(void)
     postpll = hdmi_read(0x1af);
 
     if((prepll & 1U) && (postpll & 1U)){
-      printf("hdmi: PLL locked "
+      HDMI_DEBUG("hdmi: PLL locked "
              "prepll=0x%lx postpll=0x%lx\n",
              (uint64)prepll,
              (uint64)postpll);
@@ -1370,7 +1382,7 @@ hdmi_wait_pll_lock(void)
   prepll = hdmi_read(0x1a9);
   postpll = hdmi_read(0x1af);
 
-  printf("hdmi: PLL lock timeout "
+  HDMI_DEBUG("hdmi: PLL lock timeout "
          "prepll=0x%lx postpll=0x%lx\n",
          (uint64)prepll,
          (uint64)postpll);
@@ -1381,14 +1393,14 @@ hdmi_wait_pll_lock(void)
 static void
 hdmi_pll_dump(void)
 {
-  printf("hdmi: PLL readback "
+  HDMI_DEBUG("hdmi: PLL readback "
          "1a0=%lx 1aa=%lx 1a1=%lx 1a2=%lx\n",
          (uint64)hdmi_read(0x1a0),
          (uint64)hdmi_read(0x1aa),
          (uint64)hdmi_read(0x1a1),
          (uint64)hdmi_read(0x1a2));
 
-  printf("hdmi: PLL readback "
+  HDMI_DEBUG("hdmi: PLL readback "
          "1a3=%lx 1a4=%lx 1a5=%lx 1a6=%lx\n",
          (uint64)hdmi_read(0x1a3),
          (uint64)hdmi_read(0x1a4),
@@ -1402,7 +1414,7 @@ hdmi_enable_1080p(void)
   uint32 control_1b0;
   uint32 count;
 
-  printf("hdmi: programming HDMI TX for 1080p60\n");
+  HDMI_DEBUG("hdmi: programming HDMI TX for 1080p60\n");
 
   control_1b0 = hdmi_read(0x1b0);
   control_1b0 |= 0x04;
@@ -1430,7 +1442,7 @@ hdmi_enable_1080p(void)
 
   hdmi_pll_dump();
 
-  printf("hdmi: control readback "
+  HDMI_DEBUG("hdmi: control readback "
          "1b0=0x%lx 1cc=0x%lx 1cd=0x%lx\n",
          (uint64)hdmi_read(0x1b0),
          (uint64)hdmi_read(0x1cc),
@@ -1461,18 +1473,18 @@ hdmi_enable_1080p(void)
 
   asm volatile("fence iorw, iorw" ::: "memory");
 
-  printf("hdmi: PHY/TMDS readback "
+  HDMI_DEBUG("hdmi: PHY/TMDS readback "
          "phy=0x%lx ldo=0x%lx\n",
          (uint64)hdmi_read(0x000),
          (uint64)hdmi_read(0x1b4));
 
-  printf("hdmi: PHY/TMDS readback "
+  HDMI_DEBUG("hdmi: PHY/TMDS readback "
          "serializer=0x%lx tmds=0x%lx sync=0x%lx\n",
          (uint64)hdmi_read(0x1be),
          (uint64)hdmi_read(0x1b2),
          (uint64)hdmi_read(0x0ce));
 
-  printf("hdmi: PHY, TMDS and data sync enabled\n");
+  HDMI_DEBUG("hdmi: PHY, TMDS and data sync enabled\n");
 
   return 0;
 }
@@ -1489,20 +1501,20 @@ void
 hdmi_init(void)
 {
   hdmi_ready = 0;
-  printf("\n");
-  printf("========================================\n");
-  printf(" JH7110 HDMI DRIVER - CACHE CLEAN\n");
-  printf("========================================\n");
+  HDMI_DEBUG("\n");
+  HDMI_DEBUG("========================================\n");
+  HDMI_DEBUG(" JH7110 HDMI DRIVER - CACHE CLEAN\n");
+  HDMI_DEBUG("========================================\n");
 
-  printf("hdmi: framebuffer=%p size=0x%lx\n",
+  HDMI_DEBUG("hdmi: framebuffer=%p size=0x%lx\n",
          (void *)(uint64)FRAMEBUFFER_PA,
          (uint64)FRAMEBUFFER_SIZE);
 
-  printf("hdmi: resolution=%d x %d\n",
+  HDMI_DEBUG("hdmi: resolution=%d x %d\n",
          (int)FB_WIDTH,
          (int)FB_HEIGHT);
 
-  printf("hdmi: stride=%d used-bytes=0x%lx\n",
+  HDMI_DEBUG("hdmi: stride=%d used-bytes=0x%lx\n",
          (int)FB_STRIDE,
          (uint64)FB_USED_SIZE);
 
@@ -1510,7 +1522,7 @@ hdmi_init(void)
    * 1. Alimentación.
    */
   if(vout_power_on() < 0){
-    printf("hdmi: initialization failed at PMU\n");
+    HDMI_DEBUG("hdmi: initialization failed at PMU\n");
     return;
   }
 
@@ -1518,7 +1530,7 @@ hdmi_init(void)
    * 2. Clocks y resets.
    */
   if(vout_enable_clocks_and_resets() < 0){
-    printf("hdmi: initialization failed at clocks/resets\n");
+    HDMI_DEBUG("hdmi: initialization failed at clocks/resets\n");
     return;
   }
 
@@ -1533,7 +1545,7 @@ hdmi_init(void)
   dc8200_configure_1080p();
 
   if(dc8200_readback() < 0){
-    printf("hdmi: initialization failed at DC8200\n");
+    HDMI_DEBUG("hdmi: initialization failed at DC8200\n");
     return;
   } */
 
@@ -1549,7 +1561,7 @@ hdmi_init(void)
   dc8200_configure_1080p();
 
   if(dc8200_readback() < 0){
-    printf("hdmi: initialization failed at DC8200\n");
+    HDMI_DEBUG("hdmi: initialization failed at DC8200\n");
     return;
   }
 
@@ -1557,7 +1569,7 @@ hdmi_init(void)
    * 5. Transmisor HDMI.
    */
   if(hdmi_enable_1080p() < 0){
-    printf("hdmi: initialization failed at HDMI PLL\n");
+    HDMI_DEBUG("hdmi: initialization failed at HDMI PLL\n");
     return;
   }
 
@@ -1578,7 +1590,7 @@ hdmi_init(void)
   hdmi_ready = 1;
   __sync_synchronize();
 
-  printf("========================================\n");
-  printf(" HDMI INITIALIZATION COMPLETED\n");
-  printf("========================================\n");
+  HDMI_DEBUG("========================================\n");
+  HDMI_DEBUG(" HDMI INITIALIZATION COMPLETED\n");
+  HDMI_DEBUG("========================================\n");
 }

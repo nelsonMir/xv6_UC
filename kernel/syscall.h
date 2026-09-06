@@ -30,3 +30,5 @@
 #define SYS_term_raw     28
 #define SYS_term_cooked  29
 #define SYS_term_available 30
+#define SYS_gpio_output 31
+#define SYS_gpio_write  32

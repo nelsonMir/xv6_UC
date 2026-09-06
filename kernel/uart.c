@@ -189,8 +189,8 @@ uartinit(void)
   uart_tx_w = uart_tx_r = 0;
 
   // 8) Debug rápido
-  printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n",
-         uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));
+  /*printf("UART init: stride=%d IIR=0x%x LSR=0x%x IER=0x%x\n",
+         uart_stride, (int)ReadReg(IIR), (int)ReadReg(LSR), (int)ReadReg(IER));*/
 }
 
 

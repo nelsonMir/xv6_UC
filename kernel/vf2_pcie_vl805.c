@@ -1,8 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0+
+
 /*
 Basado en el controlador PLDA PCIe de StarFive para el JH7110.
-Copyright (c) 2023 StarFive, Inc.
-Author: Mason Huo
+
 */
 
 /*
@@ -29,6 +28,18 @@ comprueba DATA_LINK_ACTIVE. Este fichero comienza después de ese punto:
 #include "defs.h"
 #include "vf2_pcie.h"
 #include "usb_xhci.h"
+
+//flag debug 
+#ifndef DBG_PCIE
+#define DBG_PCIE 0
+#endif
+
+#define PCIE_DEBUG(...)             \
+  do {                             \
+    if(DBG_PCIE)                    \
+      printf(__VA_ARGS__);         \
+  } while(0)
+
 
 #define XR3PCI_ATR_AXI4_SLV0             0x0800U
 #define XR3PCI_ATR_SRC_ADDR_LOW          0x00U
@@ -130,7 +141,7 @@ vf2_pcie0_set_atr(uint32 table,
                (uint32)(translation >> 32));
   pcie_write32(base + XR3PCI_ATR_TRSL_PARAM, parameter);
 
-  printf("pcie0: ATR%d source=%p target=%p size=%p param=%d\n",
+  PCIE_DEBUG("pcie0: ATR%d source=%p target=%p size=%p param=%d\n",
          (int)table,
          (void *)source,
          (void *)translation,
@@ -204,7 +215,7 @@ vf2_pcie0_configure_root_bridge(void)
   command |= PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER;
   vf2_pcie0_config_write(0, 0, 0, PCI_COMMAND_STATUS, command);
 
-  printf("pcie0: root buses=0x%x memory-window=0x%x\n",
+  PCIE_DEBUG("pcie0: root buses=0x%x memory-window=0x%x\n",
          buses,
          memory);
 }
@@ -252,7 +263,7 @@ vf2_pcie0_assign_vl805_bar(void)
   bar_low = vf2_pcie0_config_read(1, 0, 0, PCI_BAR0);
 
   if(bar_low & PCI_BAR_IO){
-    printf("pcie0: VL805 BAR0 unexpectedly uses I/O space\n");
+    PCIE_DEBUG("pcie0: VL805 BAR0 unexpectedly uses I/O space\n");
     return -1;
   }
 
@@ -264,7 +275,7 @@ vf2_pcie0_assign_vl805_bar(void)
 
   if(size > VF2_PCIE0_MEM_SIZE ||
      (VL805_ASSIGNED_BAR & (size - 1ULL)) != 0){
-    printf("pcie0: unsupported VL805 BAR size=%p\n", (void *)size);
+    PCIE_DEBUG("pcie0: unsupported VL805 BAR size=%p\n", (void *)size);
     return -1;
   }
 
@@ -283,11 +294,11 @@ vf2_pcie0_assign_vl805_bar(void)
 
   vl805_bar = VL805_ASSIGNED_BAR;
 
-  printf("pcie0: VL805 BAR0=%p size=%p type=%s\n",
+  PCIE_DEBUG("pcie0: VL805 BAR0=%p size=%p type=%s\n",
          (void *)vl805_bar,
          (void *)size,
          is_64 ? "64-bit" : "32-bit");
-  printf("pcie0: VL805 command=0x%x\n",
+  PCIE_DEBUG("pcie0: VL805 command=0x%x\n",
          vf2_pcie0_config_read(1, 0, 0, PCI_COMMAND_STATUS) & 0xffffU);
 
   return 0;
@@ -305,14 +316,14 @@ vf2_pcie0_probe_vl805(void)
   vl805_bar = 0;
 
   if(!vf2_pcie0_link_up()){
-    printf("pcie0: stage 1 link is not active\n");
+    PCIE_DEBUG("pcie0: stage 1 link is not active\n");
     return -1;
   }
 
-  printf("\n");
-  printf("========================================\n");
-  printf(" JH7110 PCIE0 - VL805 DISCOVERY\n");
-  printf("========================================\n");
+  PCIE_DEBUG("\n");
+  PCIE_DEBUG("========================================\n");
+  PCIE_DEBUG(" JH7110 PCIE0 - VL805 DISCOVERY\n");
+  PCIE_DEBUG("========================================\n");
 
   /*
   PCIe exige esperar al menos cien milisegundos después de salir del
@@ -341,24 +352,24 @@ vf2_pcie0_probe_vl805(void)
   class_revision = vf2_pcie0_config_read(1, 0, 0, PCI_CLASS_REVISION);
   header = vf2_pcie0_config_read(1, 0, 0, PCI_HEADER_TYPE);
 
-  printf("pcie0: bus1 dev0 id=0x%x vendor=0x%x device=0x%x\n",
+  PCIE_DEBUG("pcie0: bus1 dev0 id=0x%x vendor=0x%x device=0x%x\n",
          id,
          vendor,
          device);
-  printf("pcie0: class-revision=0x%x header=0x%x\n",
+  PCIE_DEBUG("pcie0: class-revision=0x%x header=0x%x\n",
          class_revision,
          header);
 
   if(vendor != VIA_VENDOR_ID || device != VL805_DEVICE_ID){
-    printf("pcie0: VIA VL805 1106:3483 not found\n");
+    PCIE_DEBUG("pcie0: VIA VL805 1106:3483 not found\n");
     return -1;
   }
 
   if(vf2_pcie0_assign_vl805_bar() < 0)
     return -1;
 
-  printf("pcie0: VL805 ready for xHCI\n");
-  printf("========================================\n");
+  PCIE_DEBUG("pcie0: VL805 ready for xHCI\n");
+  PCIE_DEBUG("========================================\n");
   return 0;
 }
 
@@ -372,17 +383,17 @@ int
 vf2_usb_keyboard_init(void)
 {
   if(vf2_pcie0_init() < 0){
-    printf("usb-kbd: PCIe0 stage 1 failed\n");
+    PCIE_DEBUG("usb-kbd: PCIe0 stage 1 failed\n");
     return -1;
   }
 
   if(vf2_pcie0_probe_vl805() < 0){
-    printf("usb-kbd: VL805 discovery failed\n");
+    PCIE_DEBUG("usb-kbd: VL805 discovery failed\n");
     return -1;
   }
 
   if(xhci_min_init(vf2_pcie0_vl805_bar()) < 0){
-    printf("usb-kbd: xHCI initialization failed\n");
+    PCIE_DEBUG("usb-kbd: xHCI initialization failed\n");
     return -1;
   }
 

@@ -1,11 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0+
+
 /*
 Basado en xhci.c de U-Boot y en el controlador xHCI de Linux.
-Copyright (C) 2008 Intel Corp.
-Author: Sarah Sharp
-Copyright (C) 2013 Samsung Electronics Co.Ltd
-Authors: Vivek Gautam, Vikas Sajjan
-*/
 
 /*
 usb_xhci.c
@@ -22,6 +17,17 @@ de detectar el dispositivo PCI y asignarle su BAR de memoria.
 #include "riscv.h"
 #include "defs.h"
 #include "usb_xhci.h"
+
+//flag debug 
+#ifndef DBG_XHCI
+#define DBG_XHCI 0
+#endif
+
+#define XHCI_DEBUG(...)            \
+  do {                             \
+    if(DBG_XHCI)                   \
+      printf(__VA_ARGS__);         \
+  } while(0)
 
 #define JH7110_TICKS_PER_US       4ULL
 #define XHCI_HALT_TIMEOUT_US      16000U
@@ -109,10 +115,10 @@ xhci_wait32(uint64 address,
     xhci_delay_us(1);
   } while((r_time() - start) < timeout_ticks);
 
-  printf("xhci: timeout address=%p value=0x%x\n",
+  XHCI_DEBUG("xhci: timeout address=%p value=0x%x\n",
          (void *)address,
          value);
-  printf("xhci: mask=0x%x expected=0x%x\n",
+  XHCI_DEBUG("xhci: mask=0x%x expected=0x%x\n",
          mask,
          expected);
 
@@ -155,12 +161,12 @@ xhci_dump_port(uint32 port_id)
   pls = (portsc & XHCI_PORT_PLS_MASK) >>
         XHCI_PORT_PLS_SHIFT;
 
-  printf("xhci: PORTSC%d=0x%x connected=%d enabled=%d\n",
+  XHCI_DEBUG("xhci: PORTSC%d=0x%x connected=%d enabled=%d\n",
          (int)port_id,
          portsc,
          (portsc & XHCI_PORT_CCS) != 0,
          (portsc & XHCI_PORT_PED) != 0);
-  printf("xhci: port %d power=%d speed=%d pls=%d\n",
+  XHCI_DEBUG("xhci: port %d power=%d speed=%d pls=%d\n",
          (int)port_id,
          (portsc & XHCI_PORT_PP) != 0,
          (int)speed,
@@ -213,7 +219,7 @@ xhci_root_port_reset(uint32 port_id)
                  XHCI_PORT_PR,
                  0,
                  XHCI_PORT_TIMEOUT_US) < 0){
-    printf("xhci: port %d reset bit did not clear\n", (int)port_id);
+    XHCI_DEBUG("xhci: port %d reset bit did not clear\n", (int)port_id);
     return -1;
   }
 
@@ -221,7 +227,7 @@ xhci_root_port_reset(uint32 port_id)
                  XHCI_PORT_PED,
                  XHCI_PORT_PED,
                  XHCI_PORT_TIMEOUT_US) < 0){
-    printf("xhci: port %d did not become enabled\n", (int)port_id);
+    XHCI_DEBUG("xhci: port %d did not become enabled\n", (int)port_id);
     return -1;
   }
 
@@ -230,7 +236,7 @@ xhci_root_port_reset(uint32 port_id)
                xhci_port_neutral(portsc) |
                (portsc & XHCI_PORT_CHANGE_BITS));
 
-  printf("xhci: root port %d reset completed\n", (int)port_id);
+  XHCI_DEBUG("xhci: root port %d reset completed\n", (int)port_id);
   return 0;
 }
 
@@ -279,7 +285,7 @@ xhci_halt_and_reset(void)
   status = xhci_read32(xhci.op_base + XHCI_USBSTS);
 
   if(status & (XHCI_STS_HSE | XHCI_STS_HCE)){
-    printf("xhci: controller error after reset USBSTS=0x%x\n", status);
+    XHCI_DEBUG("xhci: controller error after reset USBSTS=0x%x\n", status);
     return -1;
   }
 
@@ -301,7 +307,7 @@ xhci_start_controller(void)
                  XHCI_START_TIMEOUT_US) < 0)
     return -1;
 
-  printf("xhci: controller running USBCMD=0x%x USBSTS=0x%x\n",
+  XHCI_DEBUG("xhci: controller running USBCMD=0x%x USBSTS=0x%x\n",
          xhci_read32(xhci.op_base + XHCI_USBCMD),
          xhci_read32(xhci.op_base + XHCI_USBSTS));
 
@@ -322,7 +328,7 @@ xhci_scan_root_ports(void)
     if((portsc & XHCI_PORT_CCS) == 0)
       continue;
 
-    printf("xhci: device detected on root port %d\n", (int)port_id);
+    XHCI_DEBUG("xhci: device detected on root port %d\n", (int)port_id);
 
     if(xhci_root_port_reset(port_id) < 0)
       continue;
@@ -330,16 +336,16 @@ xhci_scan_root_ports(void)
     speed = xhci_port_speed(port_id);
 
     if(usb_enumerate_keyboard(port_id, speed) == 0){
-      printf("xhci: HID Boot keyboard ready on port %d\n",
+      XHCI_DEBUG("xhci: HID Boot keyboard ready on port %d\n",
              (int)port_id);
       return 0;
     }
 
-    printf("xhci: connected device on port %d is not usable\n",
+    XHCI_DEBUG("xhci: connected device on port %d is not usable\n",
            (int)port_id);
   }
 
-  printf("xhci: no HID Boot keyboard found\n");
+  XHCI_DEBUG("xhci: no HID Boot keyboard found\n");
   return -1;
 }
 
@@ -358,11 +364,11 @@ xhci_min_init(uint64 bar)
 
   memset(&xhci, 0, sizeof(xhci));
 
-  printf("\n");
-  printf("========================================\n");
-  printf(" VIA VL805 XHCI - MINIMAL KEYBOARD PATH\n");
-  printf("========================================\n");
-  printf("xhci: BAR=%p\n", (void *)bar);
+  XHCI_DEBUG("\n");
+  XHCI_DEBUG("========================================\n");
+  XHCI_DEBUG(" VIA VL805 XHCI - MINIMAL KEYBOARD PATH\n");
+  XHCI_DEBUG("========================================\n");
+  XHCI_DEBUG("xhci: BAR=%p\n", (void *)bar);
 
   xhci.cap_base = bar;
   cap0 = xhci_read32(bar + XHCI_CAPLENGTH);
@@ -381,15 +387,15 @@ xhci_min_init(uint64 bar)
   xhci.max_ports = (hcsparams1 >> 24) & 0xffU;
   xhci.context_size = (hccparams1 & USB_BIT(2)) ? 64U : 32U;
 
-  printf("xhci: CAPLENGTH=0x%x HCIVERSION=0x%x\n",
+  XHCI_DEBUG("xhci: CAPLENGTH=0x%x HCIVERSION=0x%x\n",
          caplength,
          version);
-  printf("xhci: slots=%d interrupters=%d ports=%d ctx=%d\n",
+  XHCI_DEBUG("xhci: slots=%d interrupters=%d ports=%d ctx=%d\n",
          (int)xhci.max_slots,
          (int)xhci.max_interrupters,
          (int)xhci.max_ports,
          (int)xhci.context_size);
-  printf("xhci: op=%p db=%p rt=%p\n",
+  XHCI_DEBUG("xhci: op=%p db=%p rt=%p\n",
          (void *)xhci.op_base,
          (void *)xhci.db_base,
          (void *)xhci.rt_base);
@@ -397,24 +403,24 @@ xhci_min_init(uint64 bar)
   if(caplength < 0x20U ||
      xhci.max_slots == 0 ||
      xhci.max_ports == 0){
-    printf("xhci: invalid capability registers\n");
+    XHCI_DEBUG("xhci: invalid capability registers\n");
     return -1;
   }
 
   if(xhci_halt_and_reset() < 0){
-    printf("xhci: halt/reset failed\n");
+    XHCI_DEBUG("xhci: halt/reset failed\n");
     return -1;
   }
 
   pagesize = xhci_read32(xhci.op_base + XHCI_PAGESIZE);
   if((pagesize & 1U) == 0){
-    printf("xhci: controller does not support 4 KiB pages\n");
+    XHCI_DEBUG("xhci: controller does not support 4 KiB pages\n");
     return -1;
   }
   xhci.page_size = USB_XHCI_PAGE_SIZE;
 
   if(xhci_mem_init(&xhci) < 0){
-    printf("xhci: DMA setup failed\n");
+    XHCI_DEBUG("xhci: DMA setup failed\n");
     return -1;
   }
 
@@ -425,15 +431,15 @@ xhci_min_init(uint64 bar)
   xhci_write32(xhci.op_base + XHCI_CONFIG, slots_enabled);
 
   if(xhci_start_controller() < 0){
-    printf("xhci: start failed\n");
+    XHCI_DEBUG("xhci: start failed\n");
     return -1;
   }
 
   xhci.ready = 1;
 
   if(xhci_scan_root_ports() < 0)
-    printf("xhci: controller ready but keyboard was not enumerated\n");
+    XHCI_DEBUG("xhci: controller ready but keyboard was not enumerated\n");
 
-  printf("========================================\n");
+  XHCI_DEBUG("========================================\n");
   return 0;
 }
