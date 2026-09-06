@@ -10,7 +10,11 @@ En resumen es un estado educativo de un objeto ELF relocatable mientras se ensam
 Mantiene el codigo de .text, los simbolos descubiertos y las relocaciones
 pendientes. De momento todo se construye en memoria, luego me encargaré 
 de escribir el fichero ELF64 ET_REL completo.
+
+Contiene datos de .text, .rodata, .data y
+.bss, simbolos fuertes/debiles y relocaciones de codigo y datos.
 */
+
 
 #ifndef XV6_TCC_OBJECT_H
 #define XV6_TCC_OBJECT_H
@@ -19,55 +23,43 @@ de escribir el fichero ELF64 ET_REL completo.
 
 #define XV6_TCC_OBJECT_MAX_SYMBOLS 32 //máximo número de símbolos que permito en un objeto
 #define XV6_TCC_OBJECT_MAX_RELOCATIONS 64 //máximo número de relocaciones que permito en un objeto
+#define XV6_TCC_OBJECT_MAX_CONSTANTS 32
 
 //Scope/alcance del símbolo: local (solo válido en el fichero objeto actual) o global (visible por otros ficheros objeto durante el enlace)
 #define XV6_TCC_STB_LOCAL 0
 #define XV6_TCC_STB_GLOBAL 1
+#define XV6_TCC_STB_WEAK 2
 #define XV6_TCC_STT_NOTYPE 0
 
+/* Estos indices coinciden con las secciones del ET_REL de la etapa 10. */
 //Indica la sección en la que un símbolo está definido
 #define XV6_TCC_SHN_UNDEF 0 //símbolo sin definir Ej: un salto a una función externa referencia "external_func". La hemos referenciado pero no definido
 #define XV6_TCC_SHN_TEXT 1 //símbolo definiddo en la sección .text
+#define XV6_TCC_SHN_RODATA 3
+#define XV6_TCC_SHN_DATA 4
+#define XV6_TCC_SHN_BSS 5
 
+#define XV6_TCC_R_RISCV_32 1
+#define XV6_TCC_R_RISCV_64 2
 //tipo de inmediato a utilizar en una relocación/correción por parte del linker
 #define XV6_TCC_R_RISCV_BRANCH 16
 #define XV6_TCC_R_RISCV_JAL 17
+#define XV6_TCC_R_RISCV_CALL 18
+#define XV6_TCC_R_RISCV_PCREL_HI20 23
+#define XV6_TCC_R_RISCV_PCREL_LO12_I 24
 
 /*Esta estructura se utilizará para representar un símbolo mientras se trababja con él en memoria. 
 UN símbolo puede ser:
 - una etiqueta. EJ: "main:"
 - Una referencia. EJ: "j main"*/
 struct Xv6TccAssemblerSymbol {
-  char name[XV6_TCC_LINE_NAME_MAX]; //guarda el nombre del símbolo
-  uint64 value; /*guarda el desplazamiento del símbolo dentro de su sección. EJ: 
-                  addi a0, zero, 1  # bytes 0-3
-                  beq a0, zero, done # bytes 4-7
-                  j external_func    # bytes 8-11
-
-              done:
-              CUando aparece donde en la sección .text, esta sección ya tiene 12 bytes por lo que "done.vale = 12"
-              OJO esto todavía no es una dirección absoluta, es un offset dentro de .text*/
+  char name[XV6_TCC_LINE_NAME_MAX];
+  uint64 value;
   uint64 size; //Es el tamaño del objeto asociado al síbmolo. EJ: función main --> tamaño de la función
-  int section_index; //indica la sección en la que está definido el símbolo, hay 2 valores de momento: XV6_TCC_SHN_UNDEF y XV6_TCC_SHN_TEXT
-  int binding; /*indica si el símbolo es local o global, sus valores pueden ser XV6_TCC_STB_LOCAL, XV6_TCC_STB_GLOBAL
-                - local: solo puede utilizarse dentro del mismo fichero objeto
-                - global: puede verse desde otros ficheros objeto durante el enlace*/
-  int defined; /*Indica si ya apareció la definición de un símbolo o solo ha sido declarado o referenciado:
-                EJ: al encontrar el símbolo done por primera vez:
-                    beq a0, zero, done
-                    Se marca como declarado o referenciado ---> defined = 0
-                    
-                    SI luego aparece:
-                    done:
-                    entonces ---> defined = 1, vale = posición actual de .text*/
-  uint elf_index; /*Es el índice definitivo del símbolo dentro de la tabla de símbolos "symtab". NO se pone al crear el símbolo porque ELF exige ordenar:
-                  símbolo nulo, símbolos locales, símbolos globales. Así que esta asignación se hace en la función xv6_tcc_object_finalize.
-                  En Xv6TccAssemblerRelocation al detectar un símbolo por orden de aparición su valor de spone en "symbol_slot" pero ese no será necesariamente el 
-                  orden, poorque un fichero ELF pone los símbolos locales antes que los globales EJ:
-                  índice ELF 0 → símbolo nulo
-                  índice ELF 1 → done, local
-                  índice ELF 2 → main, global
-                  índice ELF 3 → external_func, global*/
+  int section_index;
+  int binding;
+  int defined;
+  uint elf_index;
 };
 
 /*Representa una correción o relocación que el linker deberá realizar posteriormente. 
@@ -78,11 +70,16 @@ type = R_RISCV_BRANCH
 symbol_slot = posición interna de done, su valor depende del orden en el que descubra los símbolos
 addend = 0*/
 struct Xv6TccAssemblerRelocation {
+  int section_index;
   uint offset; //indica la posición dentro de la sección que debe corregirse
-  uint type; /*INdica el tipo de correción que debe hacer el linker (el tipo del inmediato a usar B o J): XV6_TCC_R_RISCV_BRANCH o XV6_TCC_R_RISCV_JAL*/
+  uint type;
   int symbol_slot; //es su índice interno en object->symbols[]
-  long addend; /*es el valor adicional que participa en el cálculo de la relocación de momento siempre será 0 pero 
-  si me queda tiempo implementaré expresiones como j simbolo+4*/
+  long addend;
+};
+
+struct Xv6TccAssemblerConstant {
+  char name[XV6_TCC_LINE_NAME_MAX];
+  long value;
 };
 
 /*Es el estado completo de un fichero objeto en memoria mientras se construye:
@@ -99,25 +96,76 @@ array relocations[64] es una representación sencilla que luego se convertirá "
 "finalized" indica si ya se construyeron las tablas finales del elf (1 = ya se construyó el objeto, 0 = todavía me faltan líneas por procesar)*/
 struct Xv6TccObjectBuilder {
   struct Xv6TccElfBuffer *text;
+  struct Xv6TccElfBuffer *rodata;
+  struct Xv6TccElfBuffer *data;
+  uint64 bss_size;
+
   struct Xv6TccElfBuffer *symtab;
   struct Xv6TccElfStringTable *strtab;
   struct Xv6TccElfBuffer *rela_text;
+  struct Xv6TccElfBuffer *rela_rodata;
+  struct Xv6TccElfBuffer *rela_data;
+
+  /* Buffers vacios usados por la API antigua para compatibilidad de los tests */
+  struct Xv6TccElfBuffer fallback_rodata;
+  struct Xv6TccElfBuffer fallback_data;
+  uchar fallback_rodata_byte[1];
+  uchar fallback_data_byte[1];
+  struct Xv6TccElfBuffer fallback_rela_rodata;
+  struct Xv6TccElfBuffer fallback_rela_data;
+  uchar fallback_rela_rodata_byte[1];
+  uchar fallback_rela_data_byte[1];
+
+  int current_section;
+  uint text_align;
+  uint rodata_align;
+  uint data_align;
+  uint bss_align;
 
   struct Xv6TccAssemblerSymbol symbols[XV6_TCC_OBJECT_MAX_SYMBOLS];
   int symbol_count;
 
-  struct Xv6TccAssemblerRelocation relocations[XV6_TCC_OBJECT_MAX_RELOCATIONS]; //array auxiliar donde meteré las relocaciones del objeto
+  struct Xv6TccAssemblerRelocation
+      relocations[XV6_TCC_OBJECT_MAX_RELOCATIONS];
   int relocation_count;
 
+  struct Xv6TccAssemblerConstant constants[XV6_TCC_OBJECT_MAX_CONSTANTS];
+  int constant_count;
+
   uint first_global_symbol; //first_global_symbol guarda el índice dentro de .symtab donde comienza los síḿbolos globales
+  int generated_symbol_count;
   int finalized;
 };
 
+/* API compatible con las etapas anteriores: crea .rodata/.data vacias. */
 int xv6_tcc_object_init(struct Xv6TccObjectBuilder *object,
                         struct Xv6TccElfBuffer *text,
                         struct Xv6TccElfBuffer *symtab,
                         struct Xv6TccElfStringTable *strtab,
                         struct Xv6TccElfBuffer *rela_text);
+
+/* API completa con más elementos */
+int xv6_tcc_object_init_sections(
+    struct Xv6TccObjectBuilder *object,
+    struct Xv6TccElfBuffer *text,
+    struct Xv6TccElfBuffer *rodata,
+    struct Xv6TccElfBuffer *data,
+    struct Xv6TccElfBuffer *symtab,
+    struct Xv6TccElfStringTable *strtab,
+    struct Xv6TccElfBuffer *rela_text);
+
+
+/* API completa del objeto con relocaciones de datos. */
+int xv6_tcc_object_init_full(
+    struct Xv6TccObjectBuilder *object,
+    struct Xv6TccElfBuffer *text,
+    struct Xv6TccElfBuffer *rodata,
+    struct Xv6TccElfBuffer *data,
+    struct Xv6TccElfBuffer *symtab,
+    struct Xv6TccElfStringTable *strtab,
+    struct Xv6TccElfBuffer *rela_text,
+    struct Xv6TccElfBuffer *rela_rodata,
+    struct Xv6TccElfBuffer *rela_data);
 
 int xv6_tcc_object_process_line(struct Xv6TccObjectBuilder *object,
                                 const struct Xv6TccParsedLine *line);

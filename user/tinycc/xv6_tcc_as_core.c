@@ -12,8 +12,46 @@ para generar el ELF relocatable, para ello realizaré los siguientes pasos:
 3. Con el parser de líneas de analizará cada una de ellas y se meterán en la sección .text del código del ELF
 4. Se generarán las tablas .symtab (tabla de símbolos), .strtab (tabla de nombres/cadenas) y .rela.text()
 6. Se construirá la imagen ELF completa relocatable (foramto ELF64 ET_REL)
-7. Se escribirá dicha imagen en el fichero .o
+7. Se escribirá dicha imagen en el fichero .o 
+
+He agregado soporte a más secciones, como resultado tengo las siguientes secciones (que también deben soportar relocaciones)
+
+.text y .rela.text -----> instrucciones en ensamblador
+.rodata y rela.rodata ---> datos de solo lectura, existen en memoria al ejecutar el programa pero no se modifican 
+                            ej:.rodata
+
+                                mensaje:
+                                    .asciz "Hola mundo"
+.data y .rela.data -----> datos inicializados que podrian ser modificados durante la ejecución
+                          ej: .data
+
+                              contador:
+                                  .word 10
+.bss ------> variables inicializadas a cero pero que no se almacenan en el fichero ensamblador. Por ejemplo al reservar un espacio de 1024 bytes, sería innecesario guardar todo 0s, solo se guarda el tamaño
+Esta sección .bss no guarda relocaciones porque no hay bytes físicos en el fichero objeto
+                          ej: .bss
+                              buffer:
+                                  .zero 256
+
+
+SI una sección no llega a existir en el fichero en ensamblador, la cabecera de esa sección seguirá existiendo en el ELF relocatable pero con tamaño cero, así: 
+.rodata:
+    sh_size = 0
+
+El formato de mi ELF es fijo, y el resultad ofinal con las nuevas secciones de fichero objeto relocatable es: 
+0   NULL
+1   .text
+2   .rela.text
+3   .rodata
+4   .data
+5   .bss
+6   .rela.rodata
+7   .rela.data
+8   .symtab
+9   .strtab
+10  .shstrtab
 */
+
 #include "kernel/types.h"
 #include "kernel/fcntl.h"
 #include "user/user.h"
@@ -21,14 +59,14 @@ para generar el ELF relocatable, para ello realizaré los siguientes pasos:
 
 /*Como esta versión de xv6 no tiene "realloc" (llamada de C que cambia el tamaño de un bloque de memoria)
 pues trabajo con tamaños fijos*/
-#define XV6_TCC_AS_SOURCE_CAPACITY 16384 //límite del tamaño del fichero ensamblador a leer 
+#define XV6_TCC_AS_SOURCE_CAPACITY 16384 //límite del tamaño del fichero ensamblador a leer
 #define XV6_TCC_AS_TEXT_CAPACITY 8192 //máximo número de bytes de las instrucciones codificadas. Cada instrucción ocupa 4 bytes, entonces 8192/4 = 2048 instrucciones
-#define XV6_TCC_AS_SYMTAB_CAPACITY 4096 /*máxmo num de bytes de la tabla de símbolos. Cada entrada de la tabla de símbolos es del tipo Xv6TccElfSym ---> 24 bytes por entrada
-entonces 4096 / 24 = 170 entradas/símbolos. OJO todavía tengo el límite en Xv6TccObjectBuilder a 32 símbolos, así que debo cambiar eso */
-#define XV6_TCC_AS_STRTAB_CAPACITY 2048 //capacidad tabla de cadenas
-#define XV6_TCC_AS_RELA_CAPACITY 4096 /*capacidad tabla de relocaciones. Cada entrada de la tabla de relocaciones es del tipo Xv6TccElfRela ---> 24 bytes por entrada
-entonces 4096 / 24 = 170 relocaciones. Pero el constructor interno limita las relocaciones a 64, debo cambiar eso!*/
-#define XV6_TCC_AS_SHSTRTAB_CAPACITY 256 //la tabla ".shstrtab" guarda los nombres de las secciones del elf  (.text, .re.text, .symtab, .strtab, .shstrtab)
+#define XV6_TCC_AS_RODATA_CAPACITY 4096
+#define XV6_TCC_AS_DATA_CAPACITY 4096
+#define XV6_TCC_AS_SYMTAB_CAPACITY 4096 //máximo tamaño en bytes reservado para la tabla de símbolos .symtab
+#define XV6_TCC_AS_STRTAB_CAPACITY 4096
+#define XV6_TCC_AS_RELA_CAPACITY 4096
+#define XV6_TCC_AS_SHSTRTAB_CAPACITY 256 //la tabla ".shstrtab" guarda los nombres de todas las secciones del ELF (.text, .rela.text, .rodata, .data, .bss, .rela.rodata, .rela.data, .symtab, .strtab, .shstrtab)
 #define XV6_TCC_AS_IMAGE_CAPACITY 32768 //Máximo tamaño del fichero objeto (cabecera ELF + secciones ELF + tabla de cabeceras de sección)
 
 //arrays de almacenamiento 
@@ -37,16 +75,18 @@ entonces 4096 / 24 = 170 relocaciones. Pero el constructor interno limita las re
 //por lo que se colocan en la zona de datos del programa (zona BSS)
 static char source_data[XV6_TCC_AS_SOURCE_CAPACITY]; //en este array se guardará el .s leído en crudo
 static uchar text_data[XV6_TCC_AS_TEXT_CAPACITY]; //array de los bytes de las instrucciones codificadas
+static uchar rodata_data[XV6_TCC_AS_RODATA_CAPACITY]; //array de los bytes de la seccion readonly data
+static uchar data_data[XV6_TCC_AS_DATA_CAPACITY]; //array 
 static uchar symtab_data[XV6_TCC_AS_SYMTAB_CAPACITY]; //array de la tabla de símbolos .symtab (cada entrada guarda la información estructurada del símbolo)
 static char strtab_data[XV6_TCC_AS_STRTAB_CAPACITY]; //array de la tabla de la tabla de cadenas .strtab (cada entrada guarda solamente el nombre del símbolo)
 static uchar rela_text_data[XV6_TCC_AS_RELA_CAPACITY]; //array de la tabla de relocaciones .re.text
+static uchar rela_rodata_data[XV6_TCC_AS_RELA_CAPACITY];
+static uchar rela_data_data[XV6_TCC_AS_RELA_CAPACITY];
 static char shstrtab_data[XV6_TCC_AS_SHSTRTAB_CAPACITY]; //array de la tabla del nombre de las secciones elf (.text, .re.text, .symtab, .strtab, .shstrtab)
 static uchar image_data[XV6_TCC_AS_IMAGE_CAPACITY]; //Aquí se almacenará todo los bytes del fichero ELF64 ET_REL
-
 static struct Xv6TccObjectBuilder object;
 
 /*EL verdadero ensamblador, basado en TInyCC*/
-
 
 /*Leerá el fichero .s y guardará su contenido en el array "source_data"*/
 static int
@@ -72,13 +112,11 @@ read_source_file(const char *path)
         segunda vuelta, se leen 0 bytes del fichero, entonces "amount = 0" ----> break y se sale del bucle*/
     amount = read(file, source_data + total,
                   XV6_TCC_AS_SOURCE_CAPACITY - 1 - total);
-
     //si hubo hubo un error en la lectura se sale
     if(amount < 0){
       close(file);
       return -1;
     }
-
     //si  no se ha leído nada es porque el fichero ensamblador está vacío y se sale del bucle
     if(amount == 0)
       break;
@@ -145,7 +183,6 @@ process_source(struct Xv6TccObjectBuilder *object)
     cursor
     line_text  */
     line_text = cursor;
-
     /*Muevo el cursor hasta encontrar un salto de línea \n, line_text seguirá apuntando al inicio de la línea
     Ej:
     .text\n.globl main...
@@ -156,9 +193,7 @@ process_source(struct Xv6TccObjectBuilder *object)
     while(*cursor && *cursor != '\n')
       cursor++;
 
-    /*Si cursor apunta a un salto de línea, entonces hay otra línea en el ensamblador y "has_next_line = 1"*/
-    has_next_line = (*cursor == '\n');
-
+    has_next_line = *cursor == '\n';
     /*Si hay una línea siguiente, el siguiente paso es sustituir el salto de línea \n por el caracter nulo \0, y luego desplazar el cursor.
     EJ:
     text\n.globl main... --------> text\0.globl main... --------->   text\0.globl main...
@@ -199,10 +234,8 @@ process_source(struct Xv6TccObjectBuilder *object)
     instrucciones --> bytes en .text
     saltos simbólicos --> relocaciones*/
     if(xv6_tcc_object_process_line(object, &line) < 0){
-
-      /*Todavía tengo instrucciones que soporto sintácticamente como ".data" pero no está soportada por el ensamblador de momento, 
-      el parse la reconoce pero de momento solo admito .text*/
-      fprintf(2, "asxv6: linea %d: no se puede ensamblar: %s\n", line_number, line_text);
+      fprintf(2, "asxv6: linea %d: no se puede ensamblar: %s\n",
+              line_number, line_text);
       return -1;
     }
 
@@ -218,23 +251,29 @@ process_source(struct Xv6TccObjectBuilder *object)
   return 0;
 }
 
-/*Esta es la función que convertirá el fichero ensamblador .s en el fichero objeto .o
-- input = nombre del fichero .s
-- output = nombre del fichero .o*/
 int
 xv6_tcc_as_core(char *input, char *output)
 {
   //struct Xv6TccObjectBuilder object; estado completo del fichero objeto en memoria
   struct Xv6TccElfBuffer text; //aquí almacenaré las instrucciones codificadas de la sección .text
+  struct Xv6TccElfBuffer rodata;
+  struct Xv6TccElfBuffer data;
   struct Xv6TccElfBuffer symtab; //tabla de símbolos
   struct Xv6TccElfStringTable strtab; //tabla de cadenas
   struct Xv6TccElfBuffer rela_text; //tabla de relocaciones de .text
-  struct Xv6TccElfStringTable shstrtab; //tabla de nombres de las secciones 
+  struct Xv6TccElfBuffer rela_rodata;
+  struct Xv6TccElfBuffer rela_data;
+  struct Xv6TccElfStringTable shstrtab; //tabla de nombres de las secciones
   struct Xv6TccElfBuffer image; //aquí irá la imagen completa del fichero objeto. Ósea el ELF relocatable, este array se escribirá en el fichero de salida .o
 
   //valido que los nombres de los ficheros no sean nulos
   if(!input || !output)
     return -1;
+
+  if(strcmp(input, output) == 0){
+    fprintf(2, "asxv6: entrada y salida no pueden ser el mismo fichero\n");
+    return -1;
+  }
 
   //leo el fichero ensamblador .s
   if(read_source_file(input) < 0){
@@ -246,6 +285,14 @@ xv6_tcc_as_core(char *input, char *output)
   text.data = text_data;
   text.size = 0;
   text.capacity = sizeof(text_data);
+
+  rodata.data = rodata_data;
+  rodata.size = 0;
+  rodata.capacity = sizeof(rodata_data);
+
+  data.data = data_data;
+  data.size = 0;
+  data.capacity = sizeof(data_data);
 
   //inicializo la tabla de símbolos
   symtab.data = symtab_data;
@@ -262,6 +309,14 @@ xv6_tcc_as_core(char *input, char *output)
   rela_text.size = 0;
   rela_text.capacity = sizeof(rela_text_data);
 
+  rela_rodata.data = rela_rodata_data;
+  rela_rodata.size = 0;
+  rela_rodata.capacity = sizeof(rela_rodata_data);
+
+  rela_data.data = rela_data_data;
+  rela_data.size = 0;
+  rela_data.capacity = sizeof(rela_data_data);
+
   //inicializo la trabla de nombres de las secciones
   shstrtab.data = shstrtab_data;
   shstrtab.size = 0;
@@ -271,9 +326,9 @@ xv6_tcc_as_core(char *input, char *output)
   image.size = 0;
   image.capacity = sizeof(image_data);
 
-  //icializar todos los buferes para crear los elementos del ELF en memoria: Inicializo el constructor del objeto para que object apunte a todos los búferes
-  if(xv6_tcc_object_init(&object, &text, &symtab,
-                         &strtab, &rela_text) < 0){
+  if(xv6_tcc_object_init_full(&object, &text, &rodata, &data,
+                              &symtab, &strtab, &rela_text,
+                              &rela_rodata, &rela_data) < 0){
     fprintf(2, "asxv6: no se pudo inicializar el objeto\n");
     return -1;
   }
@@ -315,10 +370,17 @@ xv6_tcc_as_core(char *input, char *output)
   fprintf(1, "  entrada: %s\n", input);
   fprintf(1, "  salida: %s\n", output);
   fprintf(1, "  .text: %d bytes\n", text.size); //imprime las instrucciones generadas
+  fprintf(1, "  .rodata: %d bytes\n", rodata.size);
+  fprintf(1, "  .data: %d bytes\n", data.size);
+  fprintf(1, "  .bss: %d bytes\n", (int)object.bss_size);
   fprintf(1, "  .symtab: %d entradas\n",
           symtab.size / (int)sizeof(struct Xv6TccElfSym));
   fprintf(1, "  .rela.text: %d entradas\n",
           rela_text.size / (int)sizeof(struct Xv6TccElfRela));
+  fprintf(1, "  .rela.rodata: %d entradas\n",
+          rela_rodata.size / (int)sizeof(struct Xv6TccElfRela));
+  fprintf(1, "  .rela.data: %d entradas\n",
+          rela_data.size / (int)sizeof(struct Xv6TccElfRela));
   fprintf(1, "  ELF completo: %d bytes\n", image.size);
   return 0;
 }

@@ -47,15 +47,15 @@
 
     .rela.text
         en el offset 0 de .text hay que corregir la llamada a imprimir
-  Licencia: GNU LGPL 2.1 o posterior. 
+
  */
+
 
 #include "kernel/types.h"
 #include "user/user.h"
 #include "user/tinycc/xv6_tcc_elf.h"
 
 /*EL módulo ELF de tinyCC se usará tanto para el assembler como el linker*/
-
 int
 xv6_tcc_elf_st_info(int binding, int type)
 {
@@ -86,7 +86,6 @@ align_up(uint value, uint align)
 {
   if(align <= 1)
     return value;
-
   //esta función sirve cuando "align" es potencia de 2
   return (value + align - 1) & ~(align - 1);
 }
@@ -179,8 +178,8 @@ xv6_tcc_put_elf_str(struct Xv6TccElfStringTable *table,
 
   //se calcula la longitud de la cadena (se le suma 1 por el nulo)
   length = strlen(text) + 1;
-  //se comprueba que el buffer no esté lleno y que la cadena logre entrar
-  if(table->size > table->capacity || length > table->capacity - table->size)
+  if(table->size > table->capacity ||
+     length > table->capacity - table->size)
     return -1;
 
   //guarda el offset inicial antes de meter la cadena, ya que ahí es donde iniciará la cadena a meter
@@ -192,11 +191,6 @@ xv6_tcc_put_elf_str(struct Xv6TccElfStringTable *table,
   return 0;
 }
 
-/*Guarda un símbolo en el buffer de símbolos "symtab" cuando ya se ha guardado 
-el offset en la tabla de cadenas ELF "srtab". 
-SE llama "raw" la función porque aquí se manda el offset dentro del buffer de cadenas en vez de mandar el nombre.
-
-*/
 int
 xv6_tcc_put_elf_sym_raw(struct Xv6TccElfBuffer *symtab,
                         uint name_offset, uint64 value, uint64 size,
@@ -278,7 +272,6 @@ xv6_tcc_put_elf_rela(struct Xv6TccElfBuffer *rela,
   if(xv6_tcc_section_add(rela, sizeof(*entry),
                          sizeof(uint64), &entry_offset) < 0)
     return -1;
-
 
   /*COnvierto la dirección de la región reservada (la dirección donde van los datos) en un puntero a Xv6TccElfRela 
   para así poder meter los datos*/

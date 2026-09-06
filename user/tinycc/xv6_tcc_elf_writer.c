@@ -1,13 +1,12 @@
 /*
 xv6_tcc_elf_writer.c
 
-Escritor educativo de objetos ELF64 RISC-V ET_REL.
-Genera el ELF raw en memoria con un buffer llamado "image" y luego lo escribe en disco.
-La organizacion de cabeceras y secciones sigue el modelo de salida ELF de
-TinyCC tccelf.c, reducido a .text, .rela.text, .symtab, .strtab y .shstrtab.
+Escritor modular de objetos ELF64 RISC-V ET_REL ampliados.
+Incluye tablas de relocacion separadas para .text, .rodata y .data.
 
 Donante conceptual:
   TinyCC tccelf.c
+  commit d9d02c56401e43be43760b63f7d82f771a7ed1f6
 
 
 */
@@ -35,13 +34,11 @@ copy_buffer(struct Xv6TccElfBuffer *image,
 {
   if(!image || !source || !offset)
     return -1;
-
   /*Reservo el espacio dentro del buffer de datos de la imagen
   igual al tamaño de la sección que voy a meter. Recuerda que esa función 
   también inicializa a cero los bytes en donde meteré cosas*/
   if(xv6_tcc_section_add(image, bytes, align, offset) < 0)
     return -1;
-
   /*COpio el contenido real de la sección en el buffer de datos de la imagen*/
   if(bytes)
     memmove(image->data + *offset, source, bytes);
@@ -71,32 +68,31 @@ fill_elf_ident(struct Xv6TccElfHeader *header)
   header->e_ident[6] = XV6_TCC_EV_CURRENT;
 }
 
-/*Contruye la imagen completa del ELF (la secuencia de bytes) en memoria en el buffer "Image" pero todavía no la
-escribe en disco. Diferencia entre el buffer object e Image: Object contiene toda la información del objeto pero dividia lógicamente: 
-punteros a los búferes, estado de finalización, relocaciones internas, símbolos internos. En cambio en imagen tengo la secuencia de bytes 
-en crudo a escribir en el fichero objeto .o directo*/
 int
 xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
                        struct Xv6TccElfBuffer *image,
                        struct Xv6TccElfStringTable *shstrtab)
 {
   struct Xv6TccElfHeader *header; //puntero auxiliar para meter los datos en el header elf
-  struct Xv6TccElfSectionHeader *sections; /*puntero auxiliar para meter los datos en la tabla de header de secciones. 
-  IMPORTANTE: cada entrada de la tabla de cabeceras de sección será un Xv6TccElfSectionHeader y como tengo 6 secciones, 
-  tendrè 6 cabeceras*/
+  struct Xv6TccElfSectionHeader *sections;
   uint section_names[XV6_TCC_REL_SECTION_COUNT]; //aquí guardaré los offsets de cada nombre de cada seccción en la tabla de nombres de secciones .shstrtab
   uint header_offset; //var donde se guardará el offset del header ELF (vadrá cero 0)
   uint text_offset;
   uint rela_text_offset;
+  uint rodata_offset;
+  uint data_offset;
+  uint bss_offset;
+  uint rela_rodata_offset;
+  uint rela_data_offset;
   uint symtab_offset;
   uint strtab_offset;
   uint shstrtab_offset;
   uint section_headers_offset; //var dónde se guardará el offset hasta la tabla de header de secciones (bytes header elf + bytes todas las demás secciones)
 
-  if(!object || !object->finalized ||
-     !object->text || !object->symtab || !object->strtab ||
-     !object->rela_text || !image || !image->data ||
-     !shstrtab || !shstrtab->data)
+  if(!object || !object->finalized || !object->text || !object->rodata ||
+     !object->data || !object->symtab || !object->strtab ||
+     !object->rela_text || !object->rela_rodata || !object->rela_data ||
+     !image || !image->data || !shstrtab || !shstrtab->data)
     return -1;
 
   /*Hay que comprobar los tamaños porque ELF exige tamaños exactos */
@@ -125,9 +121,14 @@ xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
      section_names[0] != 0 ||
      put_section_name(shstrtab, ".text", &section_names[1]) < 0 ||
      put_section_name(shstrtab, ".rela.text", &section_names[2]) < 0 ||
-     put_section_name(shstrtab, ".symtab", &section_names[3]) < 0 ||
-     put_section_name(shstrtab, ".strtab", &section_names[4]) < 0 ||
-     put_section_name(shstrtab, ".shstrtab", &section_names[5]) < 0)
+     put_section_name(shstrtab, ".rodata", &section_names[3]) < 0 ||
+     put_section_name(shstrtab, ".data", &section_names[4]) < 0 ||
+     put_section_name(shstrtab, ".bss", &section_names[5]) < 0 ||
+     put_section_name(shstrtab, ".rela.rodata", &section_names[6]) < 0 ||
+     put_section_name(shstrtab, ".rela.data", &section_names[7]) < 0 ||
+     put_section_name(shstrtab, ".symtab", &section_names[8]) < 0 ||
+     put_section_name(shstrtab, ".strtab", &section_names[9]) < 0 ||
+     put_section_name(shstrtab, ".shstrtab", &section_names[10]) < 0)
     return -1;
 
   /*Se reserva espacio para la cabecera ELF dentro del buffer de la iamgen
@@ -144,9 +145,23 @@ xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
     .strtab
     .shstrtab*/
   if(copy_buffer(image, object->text->data, object->text->size,
-                 4, &text_offset) < 0 ||
+                 object->text_align, &text_offset) < 0 ||
      copy_buffer(image, object->rela_text->data, object->rela_text->size,
                  sizeof(uint64), &rela_text_offset) < 0 ||
+     copy_buffer(image, object->rodata->data, object->rodata->size,
+                 object->rodata_align, &rodata_offset) < 0 ||
+     copy_buffer(image, object->data->data, object->data->size,
+                 object->data_align, &data_offset) < 0)
+    return -1;
+
+  /* .bss solo conserva tamaño, offset y alineacion. */
+  if(xv6_tcc_section_add(image, 0, object->bss_align, &bss_offset) < 0 ||
+     copy_buffer(image, object->rela_rodata->data,
+                 object->rela_rodata->size, sizeof(uint64),
+                 &rela_rodata_offset) < 0 ||
+     copy_buffer(image, object->rela_data->data,
+                 object->rela_data->size, sizeof(uint64),
+                 &rela_data_offset) < 0 ||
      copy_buffer(image, object->symtab->data, object->symtab->size,
                  sizeof(uint64), &symtab_offset) < 0 ||
      copy_buffer(image, object->strtab->data, object->strtab->size,
@@ -170,19 +185,15 @@ xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
     return -1;
 
  /*Se procederá a meter los datos de la Cabecera ELF*/
-
-
   //puntero al header ELF, y lo convierto en formato de estructura Xv6TccElfHeader para acceder a sus campos y llenar la cabecera
   header = (struct Xv6TccElfHeader *)(image->data + header_offset);
   //puntero a la cabecera de la tabla de secciones y lo convierto en formato de estructura Xv6TccElfSectionHeader y llenar el array de cada entrada
   sections = (struct Xv6TccElfSectionHeader *)(
       image->data + section_headers_offset);
-
   //limpio todos los bytes de la cabecera ELF poniendo 0's
   memset(header, 0, sizeof(*header));
-
-  //limpio todos los bytes de la cabecera de la tabla de secciones. Como esta tabla tiene 6 entradas, pongo todas a 0's
-  memset(sections, 0, XV6_TCC_REL_SECTION_COUNT * sizeof(*sections));
+  memset(sections, 0,
+         XV6_TCC_REL_SECTION_COUNT * sizeof(*sections));
 
   /*relleno la cabecera ELF
   Los únicos campos que no asigno aquí son: 
@@ -208,22 +219,71 @@ xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
       XV6_TCC_SHF_ALLOC | XV6_TCC_SHF_EXECINSTR;
   sections[XV6_TCC_REL_SECTION_TEXT].sh_offset = text_offset;
   sections[XV6_TCC_REL_SECTION_TEXT].sh_size = object->text->size;
-  sections[XV6_TCC_REL_SECTION_TEXT].sh_addralign = 4;
+  sections[XV6_TCC_REL_SECTION_TEXT].sh_addralign = object->text_align;
 
   //inicializo el header de .rela.text (relocaciones de .text)
   sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_name = section_names[2];
   sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_type = XV6_TCC_SHT_RELA;
   sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_offset = rela_text_offset;
   sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_size = object->rela_text->size;
-  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_link = XV6_TCC_REL_SECTION_SYMTAB; //las relocaciones utilizan la tabla de símbolos de la sección 3 (.symtab)
-  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_info = XV6_TCC_REL_SECTION_TEXT;
-  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_addralign =
-      sizeof(uint64);
+  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_link =
+      XV6_TCC_REL_SECTION_SYMTAB;
+  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_info =
+      XV6_TCC_REL_SECTION_TEXT;
+  sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_addralign = sizeof(uint64);
   sections[XV6_TCC_REL_SECTION_RELA_TEXT].sh_entsize =
       sizeof(struct Xv6TccElfRela);
 
-  //inicializo el header de la  sección .symtab
-  sections[XV6_TCC_REL_SECTION_SYMTAB].sh_name = section_names[3];
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_name = section_names[3];
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_type = XV6_TCC_SHT_PROGBITS;
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_flags = XV6_TCC_SHF_ALLOC;
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_offset = rodata_offset;
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_size = object->rodata->size;
+  sections[XV6_TCC_REL_SECTION_RODATA].sh_addralign = object->rodata_align;
+
+  sections[XV6_TCC_REL_SECTION_DATA].sh_name = section_names[4];
+  sections[XV6_TCC_REL_SECTION_DATA].sh_type = XV6_TCC_SHT_PROGBITS;
+  sections[XV6_TCC_REL_SECTION_DATA].sh_flags =
+      XV6_TCC_SHF_ALLOC | XV6_TCC_SHF_WRITE;
+  sections[XV6_TCC_REL_SECTION_DATA].sh_offset = data_offset;
+  sections[XV6_TCC_REL_SECTION_DATA].sh_size = object->data->size;
+  sections[XV6_TCC_REL_SECTION_DATA].sh_addralign = object->data_align;
+
+  sections[XV6_TCC_REL_SECTION_BSS].sh_name = section_names[5];
+  sections[XV6_TCC_REL_SECTION_BSS].sh_type = XV6_TCC_SHT_NOBITS;
+  sections[XV6_TCC_REL_SECTION_BSS].sh_flags =
+      XV6_TCC_SHF_ALLOC | XV6_TCC_SHF_WRITE;
+  sections[XV6_TCC_REL_SECTION_BSS].sh_offset = bss_offset;
+  sections[XV6_TCC_REL_SECTION_BSS].sh_size = object->bss_size;
+  sections[XV6_TCC_REL_SECTION_BSS].sh_addralign = object->bss_align;
+
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_name = section_names[6];
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_type = XV6_TCC_SHT_RELA;
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_offset =
+      rela_rodata_offset;
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_size =
+      object->rela_rodata->size;
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_link =
+      XV6_TCC_REL_SECTION_SYMTAB;
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_info =
+      XV6_TCC_REL_SECTION_RODATA;
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_addralign = sizeof(uint64);
+  sections[XV6_TCC_REL_SECTION_RELA_RODATA].sh_entsize =
+      sizeof(struct Xv6TccElfRela);
+
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_name = section_names[7];
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_type = XV6_TCC_SHT_RELA;
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_offset = rela_data_offset;
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_size = object->rela_data->size;
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_link =
+      XV6_TCC_REL_SECTION_SYMTAB;
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_info =
+      XV6_TCC_REL_SECTION_DATA;
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_addralign = sizeof(uint64);
+  sections[XV6_TCC_REL_SECTION_RELA_DATA].sh_entsize =
+      sizeof(struct Xv6TccElfRela);
+
+  sections[XV6_TCC_REL_SECTION_SYMTAB].sh_name = section_names[8];
   sections[XV6_TCC_REL_SECTION_SYMTAB].sh_type = XV6_TCC_SHT_SYMTAB;
   sections[XV6_TCC_REL_SECTION_SYMTAB].sh_offset = symtab_offset;
   sections[XV6_TCC_REL_SECTION_SYMTAB].sh_size = object->symtab->size;
@@ -235,15 +295,13 @@ xv6_tcc_build_rel_elf(const struct Xv6TccObjectBuilder *object,
   sections[XV6_TCC_REL_SECTION_SYMTAB].sh_entsize =
       sizeof(struct Xv6TccElfSym);
 
-  //inicializo el header de la  sección .strtab
-  sections[XV6_TCC_REL_SECTION_STRTAB].sh_name = section_names[4];
+  sections[XV6_TCC_REL_SECTION_STRTAB].sh_name = section_names[9];
   sections[XV6_TCC_REL_SECTION_STRTAB].sh_type = XV6_TCC_SHT_STRTAB;
   sections[XV6_TCC_REL_SECTION_STRTAB].sh_offset = strtab_offset;
   sections[XV6_TCC_REL_SECTION_STRTAB].sh_size = object->strtab->size;
   sections[XV6_TCC_REL_SECTION_STRTAB].sh_addralign = 1;
 
-  //inicializo el header de la  sección .shstrtab
-  sections[XV6_TCC_REL_SECTION_SHSTRTAB].sh_name = section_names[5];
+  sections[XV6_TCC_REL_SECTION_SHSTRTAB].sh_name = section_names[10];
   sections[XV6_TCC_REL_SECTION_SHSTRTAB].sh_type = XV6_TCC_SHT_STRTAB;
   sections[XV6_TCC_REL_SECTION_SHSTRTAB].sh_offset = shstrtab_offset;
   sections[XV6_TCC_REL_SECTION_SHSTRTAB].sh_size = shstrtab->size;
@@ -266,7 +324,6 @@ xv6_tcc_write_elf_file(const char *path,
 
   //se elimina un fichero que tenga el mismo nombre
   unlink(path);
-
   //se crea el nuevo fichero
   file = open(path, O_CREATE | O_WRONLY);
   if(file < 0)
@@ -274,7 +331,6 @@ xv6_tcc_write_elf_file(const char *path,
 
   //num bytes escritos
   written = 0;
-
   //bucle de escritura
   while(written < (int)image->size){
     int amount;

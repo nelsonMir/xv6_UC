@@ -116,6 +116,11 @@ LDXV6_OBJS = \
 	$(U)/ldxv6.o \
 	$(TCCDIR)/xv6_tcc_ld_entry.o \
 	$(TCCDIR)/xv6_tcc_ld_core.o \
+	$(TCCDIR)/xv6_tcc_exec_writer.o \
+	$(TCCDIR)/xv6_tcc_elf_writer.o \
+	$(TCCDIR)/xv6_tcc_link.o \
+	$(TCCDIR)/xv6_tcc_reloc.o \
+	$(TCCDIR)/xv6_tcc_layout.o \
 	$(TCCDIR)/xv6_tcc_elf_reader.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 

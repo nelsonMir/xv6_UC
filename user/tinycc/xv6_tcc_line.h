@@ -5,22 +5,21 @@ Analizador educativo de líneas de ensamblador.
 Separa una línea en etiqueta opcional, nombre y operandos. Las etiquetas y
 las directivas todavía no modifican tablas de símbolos ni secciones ELF.
 */
+
 #ifndef XV6_TCC_LINE_H
 #define XV6_TCC_LINE_H
 
 #include "user/tinycc/xv6_tcc_insn.h"
 
-#define XV6_TCC_LINE_TEXT_MAX 256 /*longitud máxima de una línea de código (255 + nulo) 
-EJ: loop: addi a0, a0, -1 # decrementar contador 
-normalmente la línea no será tan larga pero se pone un tamaño considerable para no utilizar memoria dinámica*/
-#define XV6_TCC_LINE_NAME_MAX 64 //longitud máxima de un nombre, ya sean etiquetas (loop, while), instrucciones (add, addi) y directivas (aquí van las secciones y otras directivas como 
+#define XV6_TCC_LINE_TEXT_MAX 256
+#define XV6_TCC_LINE_NAME_MAX 64 //longitud máxima de un nombre, ya sean etiquetas (loop, while), instrucciones (add, addi) y directivas (aquí van las secciones y otras directivas como
 //.globl main, .word 42, .asciz "Hola"), las directivas siempre comienzan por "." posteriormente he agregado que los símbolos también tiene cómo longiutd máxima esa constante
 #define XV6_TCC_LINE_OPERAND_MAX 128 //longitud máxima de texto de un operando
 #define XV6_TCC_LINE_MAX_OPERANDS 3 //número máximo de operandos en una instrucción. De momento solo permito 3 pero luego se permitirán más para cosas como .byte 1, 2, 3, 4
 
 //cada línea del código se clasificará en estos 3 tipos 
 enum Xv6TccLineKind {
-  XV6_TCC_LINE_EMPTY, /*Aquí se incluyen los comentarios "#comentario", líneas vacías y líneas con solo una etiqueta (Ej: "loop:")*/
+  XV6_TCC_LINE_EMPTY,
   XV6_TCC_LINE_INSTRUCTION, //es una línea con una instrucción ej add a0, a1, a2
   XV6_TCC_LINE_DIRECTIVE //es un directiva (las directivas comiennzan con "." EJ: .text)
 };
@@ -41,7 +40,6 @@ int xv6_tcc_valid_identifier(const char *text);
 /*Recibe la línea original y devuelve la línea ya clasificada/analizada en el struct Xv6TccParsedLine*/
 int xv6_tcc_parse_line(const char *text,
                        struct Xv6TccParsedLine *line);
-
 
 //codifica la instrucción ya clasificada en xv6_tcc_parse_line
 int xv6_tcc_encode_parsed_instruction(

@@ -17,6 +17,7 @@
   símbolos y relocaciones. La escritura se realiza en Xv6TccElfBuffer.
  */
 
+
 #include "kernel/types.h"
 #include "user/user.h"
 #include "user/tinycc/xv6_tcc_asm.h"
@@ -75,7 +76,7 @@ static int
 valid_opcode(uint opcode)
 {
   return opcode <= 0x7fU; //devuelve el resultado de una comparación  (0 o 1) ejj: 0x13 <= 0x7fU
-  /*Como el opcode tiene 7 bits los valores mínimos y máximos son:
+   /*Como el opcode tiene 7 bits los valores mínimos y máximos son:
   0000000 -> 0
   1111111 -> 127 y 127 es 0x7f */
 }
@@ -93,7 +94,7 @@ static int
 valid_funct7(uint funct7)
 {
   return funct7 <= 0x7fU;
-  /*funct7 tiene 7 bits entonces el valor máximo es 1111111 (127) --> en hexa 0x7f*/
+   /*funct7 tiene 7 bits entonces el valor máximo es 1111111 (127) --> en hexa 0x7f*/
 }
 
 //comprueba si un número cabe en una determinada cantidad de bits con signo
@@ -106,6 +107,8 @@ fits_signed(long value, int bits)
   return value >= minimum && value <= maximum;
 }
 
+/*Esta función quita espacios de un registro ej: "   a0  " --> "a0"
+devuelve la cadena sin espacios en "Output"*/
 /*----------------------------------------------------------
 Ya se permite recibir operandos escritos como texto
 */
@@ -115,7 +118,7 @@ devuelve la cadena sin espacios en "Output"*/
 static int
 copy_trimmed(const char *text, char *output, int output_size)
 {
-  const char *begin; //apunta al primer caracter útil 
+  const char *begin; //apunta al primer caracter útil
   const char *end; //apuntará al siguiente caracteres después del último carácter útil
   int length; //cantidad de caracteres a copiar
 
@@ -145,7 +148,7 @@ copy_trimmed(const char *text, char *output, int output_size)
     return -1;
 
   memmove(output, begin, length); //copia la cadena en output
-  output[length] = 0; //agrega el caracter nulo al final de la cadena 
+  output[length] = 0; //agrega el caracter nulo al final de la cadena
   return 0;
 }
 
@@ -181,7 +184,6 @@ xv6_tcc_parse_integer(const char *text, long *result)
 
   //cursor para recorrer la cadena
   cursor = buffer;
-
   //procesa el signo, inicialmente supone que es positivo, por eso negative = 0;
   negative = 0;
   if(*cursor == '+' || *cursor == '-'){
@@ -202,11 +204,10 @@ xv6_tcc_parse_integer(const char *text, long *result)
     cursor += 2;
   }
 
-
   //variables para la conversión
-  value = 0; 
+  value = 0;
   digit_count = 0; //cuenta numero de digitos leídos omitiendo signo
-  maximum = ~0UL >> 1; //se pone el máximo unsigned long desplazado un espacio a la derecha: 0UL es cero unsiged long 00000...000 y el ~ lo inverte todo a 1's y luego el >> 1 lo desplaza un espacio a la derecha 
+  maximum = ~0UL >> 1; //se pone el máximo unsigned long desplazado un espacio a la derecha: 0UL es cero unsiged long 00000...000 y el ~ lo inverte todo a 1's y luego el >> 1 lo desplaza un espacio a la derecha
   //entonces 01111...11 --> máximo long positvo
   limit = negative ? maximum + 1UL : maximum;
 
@@ -219,7 +220,6 @@ xv6_tcc_parse_integer(const char *text, long *result)
       cursor++;
       continue;
     }
-
 
     //convierte un caracter en un dígito
     if(*cursor >= '0' && *cursor <= '9')
@@ -324,7 +324,7 @@ xv6_tcc_parse_memory_operand(const char *text,
   char offset_text[XV6_TCC_OPERAND_TEXT_MAX];
   char register_text[XV6_TCC_OPERAND_TEXT_MAX];
   char *left; //puntero parentesis (
-  char *right;//puntero parentesis )
+  char *right; //puntero parentesis )
   int offset_length;
   int register_length;
 
@@ -367,7 +367,8 @@ xv6_tcc_parse_memory_operand(const char *text,
   return 0;
 }
 
-
+/*recibe los campos de la instrucción ya dividido en varias variables y devuelve 
+la instrucción codificada en binario en "word"*/
 /*--------------------------------------------------------
 Llamadas para codificar una instrucción según su tipo
 LOs formatos son: R, I, S, B, U y J
@@ -377,10 +378,7 @@ converte una instrucción RISV en una palabra binaria. EJ:
 addi a0, zero, 42 ---> 0x02a00513
 
 */
-
 //fortmato R: instrucciones con registros -> tres registros rd, rs1, rs2
-/*recibe los campos de la instrucción ya dividido en varias variables y devuelve 
-la instrucción codificada en binario en "word"*/
 int
 xv6_tcc_encode_r(uint opcode, uint funct3, uint funct7,
                  int rd, int rs1, int rs2, uint *word)
@@ -427,6 +425,40 @@ xv6_tcc_encode_i(uint opcode, uint funct3,
           (funct3 << 12) |
           ((uint)rs1 << 15) |
           (((uint)imm & 0xfffU) << 20);
+  return 0;
+}
+
+/*FOrmato shift_I: Instrucciones de desplazamiento con inmediato
+
+NO reutilizo las instrucciones con formato I, porque el campo inmediato de estas instrucciones no es un entero con signo normal:
+El campo inmediato tiene 12 bits y se dividen así:
+- superiores -> identifican la variante lógica o aritmética
+- bits inferiores -> shamt, número de posiciones a desplazar*/
+int
+xv6_tcc_encode_shift_i(uint opcode, uint funct3, uint funct_top,
+                       int shamt_bits, int rd, int rs1,
+                       long shamt, uint *word)
+{
+
+  //en sham_bits recibo el número de bits que ocupará el desplazamientos: 6 bits --> operaciones sobre 64 bits, 5 bits --> operaciones W sobre 32 bits
+  int top_bits;
+
+  if(!word || !valid_opcode(opcode) || !valid_funct3(funct3) ||
+     !valid_register(rd) || !valid_register(rs1) ||
+     (shamt_bits != 5 && shamt_bits != 6) ||
+     shamt < 0 || shamt >= (1L << shamt_bits))
+    return -1;
+
+  top_bits = 12 - shamt_bits;
+  if(funct_top >= (1U << top_bits))
+    return -1;
+
+  *word = opcode |
+          ((uint)rd << 7) |
+          (funct3 << 12) |
+          ((uint)rs1 << 15) |
+          ((uint)shamt << 20) |
+          (funct_top << (20 + shamt_bits));
   return 0;
 }
 

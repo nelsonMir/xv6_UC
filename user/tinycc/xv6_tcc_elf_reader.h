@@ -11,14 +11,20 @@ De momento lo único que haré será:
 - leer sus símbolos
 - leer sus relocaciones  
 */
+
+/*
+xv6_tcc_elf_reader.h
+
+Lector y validador educativo de objetos ELF64 RISC-V ET_REL.
+La vista apunta directamente a las regiones ya validadas del fichero cargado.
+*/
 #ifndef XV6_TCC_ELF_READER_H
 #define XV6_TCC_ELF_READER_H
 
 #include "user/tinycc/xv6_tcc_elf_writer.h"
 
 #define XV6_TCC_READER_MAX_SECTIONS 64
-#define XV6_TCC_READER_SECTION_NOT_FOUND -1 /*Como no nos podemos fiar que las secciones ELF aparezcan en el mismo orden (por si en un futuro cambio el orden en el que se meten en el ELF), utilizo esta constante
-para indicar que aún no localizo la posición de la sección en el ELF*/
+#define XV6_TCC_READER_SECTION_NOT_FOUND -1
 
 /*Es una estructura auxiliar para poder observar los campos del Fichero objeto ELF relocatable. 
 A medidas vayamos validando los campos del ELF, se irán guardando las secciones o partes verificadas en campos auxiliares de este struct. 
@@ -34,6 +40,11 @@ struct Xv6TccRelObjectView {
   /*Indices de las secciones en la tabla de nombres de secciones "shstrtab", por defecto XV6_TCC_READER_SECTION_NOT_FOUND*/
   int text_index;
   int rela_text_index;
+  int rodata_index;
+  int data_index;
+  int bss_index;
+  int rela_rodata_index;
+  int rela_data_index;
   int symtab_index;
   int strtab_index;
   int shstrtab_index;
@@ -41,18 +52,32 @@ struct Xv6TccRelObjectView {
   //punteros a las cabeceras de sección de cada sección
   const struct Xv6TccElfSectionHeader *text_section;
   const struct Xv6TccElfSectionHeader *rela_text_section;
+  const struct Xv6TccElfSectionHeader *rodata_section;
+  const struct Xv6TccElfSectionHeader *data_section;
+  const struct Xv6TccElfSectionHeader *bss_section;
+  const struct Xv6TccElfSectionHeader *rela_rodata_section;
+  const struct Xv6TccElfSectionHeader *rela_data_section;
   const struct Xv6TccElfSectionHeader *symtab_section;
   const struct Xv6TccElfSectionHeader *strtab_section;
   const struct Xv6TccElfSectionHeader *shstrtab_section;
 
   //punteros al contenido de cada una de las secciones
   const uchar *text; //puntero al contenido de la sección .text (las instrucciones)
+  const uchar *rodata;
+  const uchar *data_bytes;
+  uint64 bss_size;
+
+  /* Alias históricos para las relocaciones de .text. */
   const struct Xv6TccElfRela *relocations; //puntero al contenido de las relocaciones de .rela.text
   uint relocation_count; //var auxiliar del número de relocaciones, se calcula como sh_size / sizeof(Xv6TccElfRela)
-  const struct Xv6TccElfSym *symbols; //puntero al array de símbolos 
-  uint symbol_count; //var auxiliar del número de símbolos 
+  const struct Xv6TccElfRela *rodata_relocations;
+  uint rodata_relocation_count;
+  const struct Xv6TccElfRela *data_relocations;
+  uint data_relocation_count;
+  const struct Xv6TccElfSym *symbols; //puntero al array de símbolos
+  uint symbol_count; //var auxiliar del número de símbolos
   const char *strtab; //puntero al array de cadenas
-  uint strtab_size; //tamaño de la tabla de cadenas 
+  uint strtab_size; //tamaño de la tabla de cadenas
   const char *shstrtab; //puntero a la tabla de nombres de las secciones EJ: \0.text\0.rela.text\0.symtab\0.strtab\0.shstrtab\0
   uint shstrtab_size; //tamaño de la tabla de nombres de las secciones
 };
@@ -92,5 +117,11 @@ const char *xv6_tcc_rel_symbol_name(
 const struct Xv6TccElfRela *xv6_tcc_rel_relocation_at(
     const struct Xv6TccRelObjectView *view,
     uint index);
+
+const struct Xv6TccElfRela *xv6_tcc_rel_rodata_relocation_at(
+    const struct Xv6TccRelObjectView *view, uint index);
+
+const struct Xv6TccElfRela *xv6_tcc_rel_data_relocation_at(
+    const struct Xv6TccRelObjectView *view, uint index);
 
 #endif

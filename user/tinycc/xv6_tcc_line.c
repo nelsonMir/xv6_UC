@@ -13,6 +13,8 @@ Identificar todos sus elementos individualmente y así poder llamar a la funció
 de la instrucción respectiva con los argumentos correctos.
 */
 
+
+
 #include "kernel/types.h"
 #include "user/user.h"
 #include "user/tinycc/xv6_tcc_line.h"
@@ -160,7 +162,6 @@ remove_comment(char *text)
 
   //se va a procesar toda la línea hasta llegar al caracter nulo "\0"
   while(*text){
-
     //si el carácter actual está escapado entonces no tiene significado especial
     if(escaped){
       escaped = 0;
@@ -170,14 +171,14 @@ remove_comment(char *text)
       escaped = 1;
         //si se encuentra una comilla, si es la primera vez significa que se abre la cadena, si es la segunda vez se cierra la cadena.
         //uso el operador "!" en !quoted para intercambiar el valor y así saber si se abre o se cierra la cadena
-        } else if(*text == '"'){
-        quoted = !quoted;
+    } else if(*text == '"'){
+      quoted = !quoted;
             //si se encuentra un "#" fuera de una cadena (fuera de comillas "") es un comentario, así que lo reemplazo por el caracter nulo "\0"
             //ej: addi a0, a1, 1 # comentario  ----------> addi a0, a1, 1 \0 comentario, por lo que la línea terminaría básicamente al salir \0 y "comentario" ya no se interpretaría
-            } else if(*text == '#' && !quoted){
-            *text = 0;
-            return;
-        }
+    } else if(*text == '#' && !quoted){
+      *text = 0;
+      return;
+    }
     text++;
   }
 }
@@ -254,7 +255,6 @@ find_label_colon(char *text)
     //si en dado caso hay un espacio entonces se decarta, es decir, "loop :" no es válido, el ":" desde estar pegado al texto
     if(space_character(*text))
       return 0;
-
     text++;
   }
 
@@ -324,7 +324,7 @@ split_operands(char *text,
 {
   char *start; //Apunta al inicio del operando actual
   char *cursor; //Recorre la cadena carácter a carácter
-  int count;//Número de operandos encontrados
+  int count; //Número de operandos encontrados
   int parenthesis_depth; //Cuenta la profundidad de paréntesis: 0 --> fuera de paréntesi, 1 -->dentro de un par, 2 -->paréntesis anidados
   int quoted; //"quoted" = 1 significa que se está dentro de comillas
   int escaped; //Controla caracteres escapados dentro de cadenas
@@ -349,59 +349,53 @@ split_operands(char *text,
   Luego, el puntero start (que apuntaba al inicio de la cadena de operandos) se eliminan espacios para que apunte al primer caracter 
   del operando y luego se saca la longitud total. */
   while(1){
-
     //estos if anidados sirven para detectar si se está dentro de una cadena "", paréntesis, si un caracter está escapado en la cadena
     if(escaped){
       escaped = 0;
-        } else if(quoted && *cursor == '\\'){
-        escaped = 1;
-            } else if(*cursor == '"'){
-            quoted = !quoted;
-                } else if(!quoted && *cursor == '('){
-                parenthesis_depth++;
-                    } else if(!quoted && *cursor == ')'){
-                    parenthesis_depth--;
-                    if(parenthesis_depth < 0)
-                        return -1;
-                    }
+    } else if(quoted && *cursor == '\\'){
+      escaped = 1;
+    } else if(*cursor == '"'){
+      quoted = !quoted;
+    } else if(!quoted && *cursor == '('){
+      parenthesis_depth++;
+    } else if(!quoted && *cursor == ')'){
+      parenthesis_depth--;
+      if(parenthesis_depth < 0)
+        return -1;
+    }
 
-        /*CUando se detecta el final de un operando: esto se determina si se llega al final de la cadena, ósea "\0" o si se detecta una coma pero se está 
-        fuera de un paréntesis y de comillas. EJ: a0, a1
-                                                    ^
-                                                    |
-                                                    |*/
-        if(*cursor == 0 || (!quoted && parenthesis_depth == 0 && *cursor == ',')){
-        char saved;
-        char *operand;
-        int length;
+    if(*cursor == 0 ||
+       (!quoted && parenthesis_depth == 0 && *cursor == ',')){
+      char saved;
+      char *operand;
+      int length;
 
         //Se guarda termporalmente la coma en "saved" y se sustitye la coma en la cadena por "\0".
         //al hacer esto, tengo el siguiente resultado: "start = a0\0 a1", ósea la cadena start en realidad  termina en \0 y no después de a1
-        saved = *cursor;
-        *cursor = 0;
+      saved = *cursor;
+      *cursor = 0;
         //lo siguiente que se hace es quitar los espacios (si hbuiera a la izquierda o a la deracha) de start que actualmente solo tiene el operando 
         //"  a0  " --> "a0"
-        operand = trim_text(start);
-        length = strlen(operand);
+      operand = trim_text(start);
+      length = strlen(operand);
 
-        //validio que el operando  no esté vacío, no haya más de 3 operandos actualmente y que el operando no sea demasiado largo
-        //EJ inválido: add a0,,a2 ---> segundo operando vacío
-        if(length <= 0 || count >= XV6_TCC_LINE_MAX_OPERANDS || length >= XV6_TCC_LINE_OPERAND_MAX)
-            return -1;
+      if(length <= 0 || count >= XV6_TCC_LINE_MAX_OPERANDS ||
+         length >= XV6_TCC_LINE_OPERAND_MAX)
+        return -1;
 
         //copio el operando en el array de operandos y aumento el contador de operandos
-        memmove(operands[count], operand, length + 1);
-        count++;
+      memmove(operands[count], operand, length + 1);
+      count++;
 
         //si el caracter que guardé momentanemente en "ssaved" NO es una coma, entonces es el fin de línea \0, por lo que he llegado al final de la fila
         //y ya no hay más operandos
-        if(saved == 0)
-            break;
+      if(saved == 0)
+        break;
 
         //si el caracter salvado era la coma, entonces restauro la coma "a0\0 a1" -----> "a0, a1" 
-        *cursor = saved;
+      *cursor = saved;
         //muevo el comienzo de la línea hasta el siguiente operando
-        start = skip_spaces(cursor + 1);
+      start = skip_spaces(cursor + 1);
     }
 
     //avanzo el cursor antes de la siguiente iteración
@@ -427,15 +421,13 @@ find_directive(const char *name)
 {
   int i;
 
-  /*se recorre la tabla de directivas hasta encontrar una entrada que se corresponda con la directiva en "name", 
-  si se encuentre se devuelve el puntero a esa entrada 
-  EJ: ".word" ------> devuelve la entrada { ".word", 1, 3 }*/
-  for(i = 0; i < (int)(sizeof(directives) / sizeof(directives[0])); i++){
+  for(i = 0;
+      i < (int)(sizeof(directives) / sizeof(directives[0]));
+      i++){
     if(strcmp(name, directives[i].name) == 0)
       return &directives[i];
   }
 
-  //si no encuentra ninguna directiva devuelve cero
   return 0;
 }
 
@@ -464,7 +456,6 @@ xv6_tcc_parse_line(const char *text, struct Xv6TccParsedLine *line)
   remove_comment(buffer);
   //elimino espacios a los lados EJ: "  loop: add a0,a1,a2   " ---> "loop: add a0,a1,a2"
   cursor = trim_text(buffer);
-
   //si la línea al quitar espacios queda completamente vacía, pues se devuelve eso
   if(*cursor == 0)
     return 0;
@@ -473,15 +464,15 @@ xv6_tcc_parse_line(const char *text, struct Xv6TccParsedLine *line)
   colon = find_label_colon(cursor);
   //si hay una etiqueta entonces colon = ":"
   if(colon){
-
     char *label;
+
     //se transforman momentanemente los ":" en un nulo, así:
     //loop: add... ---> loop\0 add...
     *colon = 0;
     //se eliminan los espacios alrededor del nombre de la etiqueta
     label = trim_text(cursor);
-    //se comprueba que el nombre sea válido y que queda en el campo label de la struct de análisis de la isntrucción
-    if(!xv6_tcc_valid_identifier(label) || copy_name(label, line->label, sizeof(line->label)) < 0)
+    if(!xv6_tcc_valid_identifier(label) ||
+       copy_name(label, line->label, sizeof(line->label)) < 0)
       return -1;
 
     //en el struct de anális se marca que tiene una label 
@@ -494,7 +485,6 @@ xv6_tcc_parse_line(const char *text, struct Xv6TccParsedLine *line)
   }
 
   //actualmente en el EJ cursor apunta al inicio de "add a0,a1,a2"
-
   //se saca el nombre de la instrucción, ósea el comando de la operación: para add a0,a1,a2 ---> line->name = "add", rest = "a0,a1,a2""
   rest = first_token(cursor, line->name, sizeof(line->name));
   if(!rest)
@@ -514,14 +504,12 @@ xv6_tcc_parse_line(const char *text, struct Xv6TccParsedLine *line)
 
   //sse determina si el primer nombre extraído de la línea es una directiva, es decir, inica por "."    EJ: line->name = ".word"
   if(line->name[0] == '.'){
-
     /*SI es una directiva, se busca en la tabla de directivas una que se corresponda con ella*/
     const struct Xv6TccDirectiveDescription *directive;
-    directive = find_directive(line->name);
 
-    /*Si el número de operandos de la directiva no se corresponde con el mínimo o máximo de operandos, es inválido.
-    EJ: ".word" ---> inválido, .word necesita al menos un operando como ".word 42"*/
-    if(!directive || count < directive->minimum_operands || count > directive->maximum_operands)
+    directive = find_directive(line->name);
+    if(!directive || count < directive->minimum_operands ||
+       count > directive->maximum_operands)
       return -1;
 
     line->kind = XV6_TCC_LINE_DIRECTIVE;
@@ -562,7 +550,6 @@ xv6_tcc_encode_parsed_instruction(const struct Xv6TccParsedLine *line,
   operand2 = line->operand_count > 1 ? line->operands[1] : 0;
   operand3 = line->operand_count > 2 ? line->operands[2] : 0;
 
-
   //se llama a la función para codificar la instrucción 32 bits
   return xv6_tcc_encode_named_instruction(line->name,
                                            operand1,
@@ -571,8 +558,6 @@ xv6_tcc_encode_parsed_instruction(const struct Xv6TccParsedLine *line,
                                            word);
 }
 
-/*codifica la instrucción ya clasificada en xv6_tcc_parse_line y además escribe los 4 bytes (32 bits) de la instrucción binaria 
-en el buffer que representa la sección .text, todavía no en el fichero ELF definitivo en disco*/
 int
 xv6_tcc_emit_parsed_instruction(const struct Xv6TccParsedLine *line,
                                  struct Xv6TccElfBuffer *text_section,

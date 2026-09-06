@@ -1,14 +1,14 @@
 /*
-  xv6_tcc_asm.h
- 
-  Codificación mínima de instrucciones RV64I inspirada en el modelo de
-  emisores por formato de TinyCC riscv64-asm.c.
- 
-  Las fucnciones ya pueden procesar ellas misma el número de registro e inmediatos
-  para ello se añaden nombres de registros, enteros y operandos de memoria.
-Todavía no se busca el nombre de una instrucción en una tabla ni se procesan
-etiquetas o expresiones simbólicas
- */
+xv6_tcc_asm.h
+
+Codificación de los formatos necesarios para las 52 instrucciones RV64I y
+análisis de operandos textuales inspirado en TinyCC riscv64-asm.c.
+
+Los nombres de instrucciones se mantienen en xv6_tcc_insn.c
+ este módulo
+valida registros, inmediatos, shifts y operandos de memoria y produce las
+palabras binarias de 32 bits.
+*/
 #ifndef XV6_TCC_ASM_H
 #define XV6_TCC_ASM_H
 
@@ -23,6 +23,9 @@ int xv6_tcc_encode_r(uint opcode, uint funct3, uint funct7,
                      int rd, int rs1, int rs2, uint *word);
 int xv6_tcc_encode_i(uint opcode, uint funct3,
                      int rd, int rs1, long imm, uint *word);
+int xv6_tcc_encode_shift_i(uint opcode, uint funct3, uint funct_top,
+                           int shamt_bits, int rd, int rs1,
+                           long shamt, uint *word);
 int xv6_tcc_encode_s(uint opcode, uint funct3,
                      int rs1, int rs2, long imm, uint *word);
 int xv6_tcc_encode_b(uint opcode, uint funct3,

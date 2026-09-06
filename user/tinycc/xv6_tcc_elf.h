@@ -4,6 +4,12 @@
   Secciones y helpers ELF reducidos a partir de tccelf.c de TinyCC.
   FUnción original: https://raw.githubusercontent.com/TinyCC/tinycc/d9d02c56401e43be43760b63f7d82f771a7ed1f6/tccelf.c
  */
+
+/*
+ xv6_tcc_elf.h
+ 
+ Secciones y helpers ELF reducidos a partir de tccelf.c.
+ */
 #ifndef XV6_TCC_ELF_H
 #define XV6_TCC_ELF_H
 
@@ -15,8 +21,8 @@ aún no he creado la función realloc() para que las secciones puedan crecer din
 con tamaños fijos*/
 struct Xv6TccElfBuffer {
   uchar *data; //APUnta a la memorial real donde se almacena los bytes
-  uint size; //número de bytes que ya  pertenecen a la sección (se va llenando porque voy metiendo elementos )
-  uint capacity; //capactiy: número de bytes que caben en la sección completa reservada de "data"
+  uint size;
+  uint capacity;
 };
 
 /*Tabla de cadenas ELF "strab". también vale para "shstrtab (section header string table)" ya que ambas tienen el mismo formato, son secuencias de carácteres terminadas por \0
@@ -65,8 +71,8 @@ struct Xv6TccElfSym {
 /*Reprenta un relocación ELF64 con addend explícito (ósea que puede tener un valor adicional que puede particiar en el cálculo de la direción): Una relocación es una instrucción 
 para el linker que le indica que en ese lugar en concreto del código o de los datos donde hay un valor que debe recalcularse.
 //la siguiente explicación de los campos es válida para un objeto relocatable*/
-struct Xv6TccElfRela { 
-  uint64 r_offset; //el offset de la sección donde debe hacerse la correción. EJ: si la corección es de .text (.rela.text), si r_offset = 12 entonces la correción afecta a los bytes 
+struct Xv6TccElfRela {
+  uint64 r_offset; //el offset de la sección donde debe hacerse la correción. EJ: si la corección es de .text (.rela.text), si r_offset = 12 entonces la correción afecta a los bytes
   //que comienzan en el offset 12 de la sección .text
   uint64 r_info; //el símbolo + tipo de corrección: 32 bits superiores el índice del símbolo y 32 bits inferiores el tipo de reloación
   long r_addend; //valor adicional que puede particiar en el cálculo de la direción. EJ: .dword mensaje + 8 --> r_addend = 8
@@ -81,6 +87,7 @@ uint64 xv6_tcc_elf_r_info(uint symbol_index, uint relocation_type);
 uint xv6_tcc_elf_r_symbol(uint64 info);
 //extra el tipo de relocación almacenada en r_info (32 bits inferiores el tipo de reloación)
 uint xv6_tcc_elf_r_type(uint64 info);
+
 int xv6_tcc_section_add(struct Xv6TccElfBuffer *section,
                         uint bytes, uint align, uint *offset);
 int xv6_tcc_put_elf_str(struct Xv6TccElfStringTable *table,

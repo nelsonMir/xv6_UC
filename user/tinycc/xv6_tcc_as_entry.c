@@ -3,7 +3,6 @@
 #include "user/tinycc/xv6_tcc_entry.h"
 
 /*Este fichero va a ofrecer los wrapper para conectar asxv6 <---> tcc_as_core*/
-
 int xv6_tcc_as_core(char *input, char *output);
 
 int

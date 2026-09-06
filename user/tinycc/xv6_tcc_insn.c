@@ -37,18 +37,21 @@ EN resumen, ahora existirá en este fichero una nueva función de condificación
 5. COmo resultado se obtiene una codificación binaria de la instrucción inicial addi a0, sp, 16
 
 
+Tabla educativa completa de las 52 instrucciones RV64I inspirada en la selección de tokens y
+los switch de TinyCC riscv64-asm.c. Cada entrada describe la codificación de
+una instrucción real o identifica una pseudoinstrucción que debe expandirse.
+
 Basado en:
   riscv64-asm.c https://raw.githubusercontent.com/TinyCC/tinycc/d9d02c56401e43be43760b63f7d82f771a7ed1f6/riscv64-asm.c
   riscv64-tok.h https://raw.githubusercontent.com/Tiny-C-Compiler/tinycc-mirror-repository/d9d02c56401e43be43760b63f7d82f771a7ed1f6/riscv64-tok.h
 */
 
+
 #include "kernel/types.h" //los tipos de datos de xv6
 #include "user/user.h" //strlen, strcmp, memmove...
 #include "user/tinycc/xv6_tcc_insn.h" //necesito las funciones de la etapa anterior para codificar instrucciones y para convertir operandos de la instruc a dígitos
 
-#define XV6_TCC_MNEMONIC_MAX 32 /*el nombre de la instrucción se llama mnenomico, es un nombre corto pero se permite que se pongan hasta 31 caracteres (+ nulo)
-para que no haya desbordamiento si alguien por accidente pone un nombre muy largo*/
-
+#define XV6_TCC_MNEMONIC_MAX 32
 
 /*Es un array/tabla cuya cada entrada describe cómo es el formato de la operación en este orden:
 nombre, tipo, opcode, funct3, funct7, cantidad de operandos
@@ -71,12 +74,26 @@ static const struct Xv6TccInstruction instructions[] = {
   { "or",    XV6_TCC_INSN_R,      0x33, 0x6, 0x00, 3 },
   { "and",   XV6_TCC_INSN_R,      0x33, 0x7, 0x00, 3 },
 
+  { "addw",  XV6_TCC_INSN_R,      0x3b, 0x0, 0x00, 3 },
+  { "subw",  XV6_TCC_INSN_R,      0x3b, 0x0, 0x20, 3 },
+  { "sllw",  XV6_TCC_INSN_R,      0x3b, 0x1, 0x00, 3 },
+  { "srlw",  XV6_TCC_INSN_R,      0x3b, 0x5, 0x00, 3 },
+  { "sraw",  XV6_TCC_INSN_R,      0x3b, 0x5, 0x20, 3 },
+
   { "addi",  XV6_TCC_INSN_I,      0x13, 0x0, 0x00, 3 },
   { "slti",  XV6_TCC_INSN_I,      0x13, 0x2, 0x00, 3 },
   { "sltiu", XV6_TCC_INSN_I,      0x13, 0x3, 0x00, 3 },
   { "xori",  XV6_TCC_INSN_I,      0x13, 0x4, 0x00, 3 },
   { "ori",   XV6_TCC_INSN_I,      0x13, 0x6, 0x00, 3 },
-  { "andi",  XV6_TCC_INSN_I,      0x13, 0x7, 0x00, 3 },
+  { "andi",  XV6_TCC_INSN_I,        0x13, 0x7, 0x00, 3 },
+  { "slli",  XV6_TCC_INSN_SHIFTI64, 0x13, 0x1, 0x00, 3 },
+  { "srli",  XV6_TCC_INSN_SHIFTI64, 0x13, 0x5, 0x00, 3 },
+  { "srai",  XV6_TCC_INSN_SHIFTI64, 0x13, 0x5, 0x10, 3 },
+
+  { "addiw", XV6_TCC_INSN_I,        0x1b, 0x0, 0x00, 3 },
+  { "slliw", XV6_TCC_INSN_SHIFTIW,  0x1b, 0x1, 0x00, 3 },
+  { "srliw", XV6_TCC_INSN_SHIFTIW,  0x1b, 0x5, 0x00, 3 },
+  { "sraiw", XV6_TCC_INSN_SHIFTIW,  0x1b, 0x5, 0x20, 3 },
 
   { "lb",    XV6_TCC_INSN_LOAD,   0x03, 0x0, 0x00, 2 },
   { "lh",    XV6_TCC_INSN_LOAD,   0x03, 0x1, 0x00, 2 },
@@ -102,6 +119,9 @@ static const struct Xv6TccInstruction instructions[] = {
   { "auipc", XV6_TCC_INSN_U,      0x17, 0x0, 0x00, 2 },
   { "jal",   XV6_TCC_INSN_JAL,    0x6f, 0x0, 0x00, 2 },
   { "jalr",  XV6_TCC_INSN_JALR,   0x67, 0x0, 0x00, 2 },
+  { "fence", XV6_TCC_INSN_FIXED,   0x0ff0000f, 0, 0, 0 },
+  { "ecall", XV6_TCC_INSN_FIXED,   0x00000073, 0, 0, 0 },
+  { "ebreak", XV6_TCC_INSN_FIXED,  0x00100073, 0, 0, 0 },
 
   /*también se incluyen pseudoinstrucciones: Una pseudoinstrucción se debe transformar en otra instrucción ya que 
   ésta no tiene codificación propia. 
@@ -115,9 +135,10 @@ static const struct Xv6TccInstruction instructions[] = {
   { "ret",   XV6_TCC_PSEUDO_RET,  0, 0, 0, 0 },
   { "jr",    XV6_TCC_PSEUDO_JR,   0, 0, 0, 1 },
   { "j",     XV6_TCC_PSEUDO_J,    0, 0, 0, 1 },
-  { "li",    XV6_TCC_PSEUDO_LI,   0, 0, 0, 2 }
+  { "li",    XV6_TCC_PSEUDO_LI,   0, 0, 0, 2 },
+  { "call",  XV6_TCC_PSEUDO_CALL, 0, 0, 0, 1 },
+  { "la",    XV6_TCC_PSEUDO_LA,   0, 0, 0, 2 }
 };
-
 
 /*ELimina espacios del nombre de la instrucción
 EL código es básicamente el mismo que usé en "copy_trimmed()" en xv6_tcc_asm.c
@@ -205,12 +226,6 @@ xv6_tcc_find_instruction(const char *name)
   if(copy_mnemonic(name, mnemonic, sizeof(mnemonic)) < 0)
     return 0;
 
-    //recorro el array/tabla de instrucciones
-    /*Para no meter el tamaño estático de la tabla hago 
-    sizeof(instructions) / sizeof(instructions[0]) 
-    en donde sizeof(instructions) = número de elementos x tamaño de cada elemento en bytes
-    y sizeof(instructions[0] es el tamaño del elemento en bytes
-    entonces (N x tamaño_elemento) / tamaño_elemento = N*/
   for(i = 0; i < (int)(sizeof(instructions) / sizeof(instructions[0])); i++){
     if(strcmp(mnemonic, instructions[i].name) == 0) //comparo si el mnemonic se corresponde con el nombre de esa entrada y si es así, la devuelvo
       return &instructions[i];
@@ -219,8 +234,6 @@ xv6_tcc_find_instruction(const char *name)
   return 0;
 }
 
-/*Esta es la función principal para realizar la codificación en 32 bits de una instrucción:
-Recibe en cada parámetro los elementos de la instrucción*/
 int
 xv6_tcc_encode_named_instruction(const char *name,
                                   const char *operand1,
@@ -228,7 +241,6 @@ xv6_tcc_encode_named_instruction(const char *name,
                                   const char *operand3,
                                   uint *word)
 {
-
   const struct Xv6TccInstruction *instruction; //variable auxiliar para guardar la entrada de la tabla de instrucciones
   //variables auxiliares en donde guadaré los valores transformados:EJ aquí guardaré los operandos convertidos a dígitos
   int rd; //registro destino
@@ -241,18 +253,15 @@ xv6_tcc_encode_named_instruction(const char *name,
     return -1;
 
   instruction = xv6_tcc_find_instruction(name); //saco la entrada de la tabla de instrucciones correspondiente al nombre de la instrucción
-
-  //compruebo que la instrucción exista y que la cantidad de operandos recibidos se corresponda con los que espera esa familia de instrucción 
-  //identificada en la var anterior
-  if(!instruction || !valid_operand_count(instruction->operand_count, operand1, operand2, operand3))
+  if(!instruction ||
+     !valid_operand_count(instruction->operand_count,
+                          operand1, operand2, operand3))
     return -1;
-
 
   /*EN este switch decido cómo interpretar los operandos de la instrucción según el tipo de familia o categoría al que pertence la instrucción
   LOs tipos de familia están definidos en el .h de este fichero.
   LO mejor es hacerlo por familia y no por instrucción específica porque así puedo reutilizar código*/
   switch(instruction->kind){
-
   //instrucciones tipo R (3 registros)
   case XV6_TCC_INSN_R:
     //convierto los 3 registros a dígitos y si algo sale mal, retorno error
@@ -276,6 +285,17 @@ xv6_tcc_encode_named_instruction(const char *name,
     return xv6_tcc_encode_i(instruction->opcode,
                             instruction->funct3,
                             rd, rs1, immediate, word);
+
+  case XV6_TCC_INSN_SHIFTI64:
+  case XV6_TCC_INSN_SHIFTIW:
+    if(xv6_tcc_parse_register(operand1, &rd) < 0 ||
+       xv6_tcc_parse_register(operand2, &rs1) < 0 ||
+       xv6_tcc_parse_integer(operand3, &immediate) < 0)
+      return -1;
+    return xv6_tcc_encode_shift_i(
+        instruction->opcode, instruction->funct3, instruction->funct7,
+        instruction->kind == XV6_TCC_INSN_SHIFTIW ? 5 : 6,
+        rd, rs1, immediate, word);
 
   case XV6_TCC_INSN_LOAD:
     if(xv6_tcc_parse_register(operand1, &rd) < 0 ||
@@ -326,8 +346,11 @@ xv6_tcc_encode_named_instruction(const char *name,
                             instruction->funct3,
                             rd, rs1, immediate, word);
 
-  //aquí se transforman todas las pseudoinstrucciones en instrucciones codificables equivalentes
+  case XV6_TCC_INSN_FIXED:
+    *word = instruction->opcode;
+    return 0;
 
+  //aquí se transforman todas las pseudoinstrucciones en instrucciones codificables equivalentes
   //nop se expande/transforma en addi x0, x0, 0
   case XV6_TCC_PSEUDO_NOP:
     return xv6_tcc_encode_i(0x13, 0, 0, 0, 0, word);
@@ -370,6 +393,10 @@ xv6_tcc_encode_named_instruction(const char *name,
        xv6_tcc_parse_integer(operand2, &immediate) < 0)
       return -1;
     return xv6_tcc_encode_i(0x13, 0, rd, 0, immediate, word);
+
+  case XV6_TCC_PSEUDO_CALL:
+  case XV6_TCC_PSEUDO_LA:
+    return -1;
   }
 
   return -1;
