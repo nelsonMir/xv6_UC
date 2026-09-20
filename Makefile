@@ -206,6 +206,15 @@ ELFREADTEST_OBJS = \
 	$(TCCDIR)/xv6_tcc_asm.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+
+# Programa didactico para analizar y codificar una línea RV64I
+RVINFO_OBJS = \
+	$(U)/rvinfo.o \
+	$(TCCDIR)/xv6_tcc_line.o \
+	$(TCCDIR)/xv6_tcc_insn.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # Prueba independiente de los buffers y tablas ELF
 $(U)/_elftest: $(ELFTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
@@ -253,6 +262,12 @@ $(U)/_elfreadtest: $(ELFREADTEST_OBJS) $(ULIB)
 	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/elfreadtest.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/elfreadtest.sym
+
+# Programa didáctico para visualizar el análisis y codificación RV64I
+$(U)/_rvinfo: $(RVINFO_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/rvinfo.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/rvinfo.sym
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $^
@@ -318,6 +333,7 @@ UPROGS=\
 	$U/_symreltest\
 	$U/_objwritetest\
 	$U/_elfreadtest\
+	$U/_rvinfo\
 
 fs.img: mkfs/mkfs README $(UPROGS) $(ASXV6_TESTS) #se agregan los programas de usuario y los ficheros en ensamblador para pruebas
 	mkfs/mkfs fs.img README $(UPROGS) $(ASXV6_TESTS)
