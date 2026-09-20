@@ -71,6 +71,14 @@ LDXV6_OBJS = \
 	$(TCCDIR)/xv6_tcc_elf_reader.o \
 	$(TCCDIR)/xv6_tcc_elf.o
 
+# Objetos utilizados por rvinfo para analizar y codificar instrucciones
+RVINFO_OBJS = \
+	$(U)/rvinfo.o \
+	$(TCCDIR)/xv6_tcc_line.o \
+	$(TCCDIR)/xv6_tcc_insn.o \
+	$(TCCDIR)/xv6_tcc_asm.o \
+	$(TCCDIR)/xv6_tcc_elf.o
+
 # ============================================
 # codigos ensamblador prueba 
 # ============================================
@@ -162,6 +170,7 @@ UPROGS = \
   $(U)/_rvnano \
   $(U)/_asxv6 \
   $(U)/_ldxv6 \
+  $(U)/_rvinfo \
 
 # ============================================
 #  Ensamblador del kernel
@@ -261,6 +270,12 @@ $(U)/_ldxv6: $(LDXV6_OBJS) $(ULIB)
 	$(LD) -T $(U)/user.ld -o $@ $^
 	$(OBJDUMP) -S $@ > $(U)/ldxv6.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/ldxv6.sym
+
+# Programa didáctico para visualizar el análisis y codificación RV64I
+$(U)/_rvinfo: $(RVINFO_OBJS) $(ULIB)
+	$(LD) -T $(U)/user.ld -o $@ $^
+	$(OBJDUMP) -S $@ > $(U)/rvinfo.asm
+	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(U)/rvinfo.sym
 
 # Enlazado genérico de userland a ELF con user.ld
 $(U)/_%: $(U)/%.o $(ULIB)

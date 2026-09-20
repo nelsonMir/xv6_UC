@@ -25,10 +25,37 @@
   obtener caracteres de 8x16.
  */
 
-#define FONT_SOURCE_WIDTH        8U
+/*#define FONT_SOURCE_WIDTH        8U
 #define FONT_SOURCE_HEIGHT       8U
 #define FBCONSOLE_CHAR_WIDTH     8U
-#define FBCONSOLE_CHAR_HEIGHT    16U
+#define FBCONSOLE_CHAR_HEIGHT    16U*/
+
+/*
+  La fuente original es de 8x8 píxeles, pero para aumentar el tamaño, se amplia a un bloque de
+  FONT_SCALE_X x FONT_SCALE_Y píxeles del framebuffer.
+ 
+  Con escala 3x3:
+ 
+    fuente original:   8x8
+    carácter mostrado: 24x24
+ 
+  En 1920x1080 esto proporciona una consola de:
+ 
+    1920 / 24 = 80 columnas
+    1080 / 24 = 45 filas
+ */
+#define FONT_SOURCE_WIDTH        8U
+#define FONT_SOURCE_HEIGHT       8U
+
+#define FONT_SCALE_X             3U
+#define FONT_SCALE_Y             3U
+
+#define FBCONSOLE_CHAR_WIDTH \
+  (FONT_SOURCE_WIDTH * FONT_SCALE_X)
+
+#define FBCONSOLE_CHAR_HEIGHT \
+  (FONT_SOURCE_HEIGHT * FONT_SCALE_Y)
+
 
 #define FBCONSOLE_COLS \
   (HDMI_FB_WIDTH / FBCONSOLE_CHAR_WIDTH)
@@ -480,8 +507,16 @@ fbconsole_draw_char_locked(uint32 column,
   );
 }*/
 
-/*DIbuja una celda por completo (dibujar tanto el fondo como el caracter/glyph). Esto es necesario porque al sustituir un caracter por otro, se deben nquitar los pixeles
-del anterior*/
+/*
+  Dibuja una celda completa
+ 
+  La fuente original es de 8x8 píxeles. Cada píxel de esa
+  fuente se ampliia a un bloque FONT_SCALE_X x FONT_SCALE_Y
+  dentro del framebuffer.
+ 
+  También se dibuja el fondo completo de la celda para eliminar
+  los píxeles que pudieran pertenecer al carácter anterior.
+ */
 static void
 fbconsole_draw_char_locked(uint32 column,
                            uint32 row,
@@ -493,60 +528,68 @@ fbconsole_draw_char_locked(uint32 column,
   uint32 foreground;
   uint32 background;
 
-  //mpedir escrituras fuera de la matriz lógica de caracteres
+  //Impedir escrituras fuera de la matriz lógica de caracteres de la consola
   if(column >= FBCONSOLE_COLS || row >= FBCONSOLE_ROWS)
     return;
 
   glyph = fbconsole_get_glyph(character);
 
+  //Coordenada del primer píxel de la celda
   pixel_x = column * FBCONSOLE_CHAR_WIDTH;
   pixel_y = row * FBCONSOLE_CHAR_HEIGHT;
 
-  /*
-    Obtener los colores activos. la imagen en inverso estarán
-    intercambiados
-   */
   foreground = fbconsole_active_foreground_locked();
   background = fbconsole_active_background_locked();
 
+  //Recorrer las 8 filas de la fuente original
   for(uint32 source_row = 0;
       source_row < FONT_SOURCE_HEIGHT;
       source_row++){
 
     uint8 row_bits = glyph[source_row];
 
-    /*
-      La fuente original mide 8 píxeles de alto.
-      Cada fila se copia dos veces para obtener 16 píxeles.
-     */
-    for(uint32 vertical_copy = 0;
-        vertical_copy < 2U;
-        vertical_copy++){
+    //Recorrer los 8 píxeles de la fila
+    for(uint32 source_column = 0;
+        source_column < FONT_SOURCE_WIDTH;
+        source_column++){
 
-      uint32 destination_y =
-        pixel_y + (source_row * 2U) + vertical_copy;
+      //En esta tabla, bit 0 = píxel izquierdo
+      uint32 color =
+        (row_bits & (1U << source_column))
+          ? foreground
+          : background;
 
-      for(uint32 source_column = 0;
-          source_column < FONT_SOURCE_WIDTH;
-          source_column++){
+      /*
+        Ampliar un píxel de la fuente a un bloque
+        FONT_SCALE_X x FONT_SCALE_Y
+       */
+      for(uint32 scale_y = 0;
+          scale_y < FONT_SCALE_Y;
+          scale_y++){
 
-        /*
-          En esta tabla, bit 0 = píxel izquierdo.
-         */
-        uint32 color =
-          (row_bits & (1U << source_column))
-            ? foreground
-            : background;
+        for(uint32 scale_x = 0;
+            scale_x < FONT_SCALE_X;
+            scale_x++){
 
-        fbconsole_put_pixel_locked(
-          pixel_x + source_column,
-          destination_y,
-          color
-        );
+          fbconsole_put_pixel_locked(
+            pixel_x +
+              (source_column * FONT_SCALE_X) +
+              scale_x,
+
+            pixel_y +
+              (source_row * FONT_SCALE_Y) +
+              scale_y,
+
+            color
+          );
+        }
       }
     }
   }
 
+  /*
+    Ordenar las escrituras antes de publicar el contenido del framebuffer.
+   */
   asm volatile("fence rw, rw" ::: "memory");
 
   hdmi_cache_clean_rect(
